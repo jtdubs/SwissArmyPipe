@@ -1,4 +1,9 @@
-﻿using System;
+﻿// TODO: flatten directory hierarchy by one level
+// TODO: add sample client/server apps for different modes of sync/async communication: sync, overlapped, io completion port, io completion routing
+// TODO: remove sap client & sap server once these are working
+// TODO: test hooking of different sample apps
+
+using System;
 using EasyHook;
 using System.Runtime.InteropServices;
 using System.Threading;
