@@ -421,6 +421,8 @@ namespace SwissArmyHook
         /// ReadFileEx is used to read from a named pipe asynchronously
         /// 
         /// We don't currently support this path.  :(
+        /// 
+        /// TODO: implement this
         /// </summary>
         /// <param name="hFile"></param>
         /// <param name="lpBuffer"></param>
@@ -461,6 +463,8 @@ namespace SwissArmyHook
         /// WriteFileEx is used to write to a named pipe asynchronously
         /// 
         /// We don't currently support this path.  :(
+        /// 
+        /// TODO: implement this
         /// </summary>
         /// <param name="hFile"></param>
         /// <param name="lpBuffer"></param>
@@ -500,7 +504,8 @@ namespace SwissArmyHook
         /// GetOverlappedResult is used to get the result of an OVERLAPPED async operation
         /// 
         /// This is not currently supported as .NET code uses IO completion ports instead.
-        /// TODO: add support for this
+        /// 
+        /// TODO: implement this
         /// </summary>
         /// <param name="hFile"></param>
         /// <param name="lpOverlapped"></param>
@@ -599,6 +604,8 @@ namespace SwissArmyHook
         /// GetQueuedCompletionStatusEx is used to check that status of multiple IO completion ports at the same time
         /// 
         /// This is not currently supported.
+        /// 
+        /// TODO: implement this
         /// </summary>
         /// <param name="CompletionPort"></param>
         /// <param name="lpCompletionPortEntries"></param>
@@ -662,6 +669,7 @@ namespace SwissArmyHook
         private ServerInterface server = null;
         private BlockingCollection<Action> queue = new BlockingCollection<Action>();
 
+        // TODO: clean-up unused or overcomplicated data structures
         private ConcurrentDictionary<IntPtr, string> pipeHandleToName = new ConcurrentDictionary<IntPtr, string>();
         private ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>> ioPortToHandles = new ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>>();
         private ConcurrentDictionary<UIntPtr, IntPtr> completionKeyToHandle = new ConcurrentDictionary<UIntPtr, IntPtr>();
