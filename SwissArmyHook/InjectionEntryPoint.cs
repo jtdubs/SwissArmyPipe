@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 
 namespace SwissArmyHook
 {
@@ -128,13 +129,15 @@ namespace SwissArmyHook
                 // if a pipe was successfully opened
                 if (handle.ToInt32() != -1 && lpFileName.StartsWith(@"\\.\pipe\", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    // map the handle to the original pipe name
+                    // map the handle to the original pipe name and create a pcap file
                     pipeHandleToName[handle] = lpFileName;
+                    pcapWriters[handle] = new PCapNGWriter(new BinaryWriter(File.Create(String.Format("client-{0}.pcapng", Path.GetFileName(lpFileName)))));
                     queue.Add(String.Format("Handle({1:X08}) = Client(\"{0}\")", lpFileName, handle.ToInt32()));
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("CreateFile Error: {0}", ex.Message));
             }
 
             return handle;
@@ -157,13 +160,15 @@ namespace SwissArmyHook
                 // if a pipe was successfully opened
                 if (handle.ToInt32() != -1)
                 {
-                    // map the handle to the original pipe name
+                    // map the handle to the original pipe name and create a pcap file
                     pipeHandleToName[handle] = lpName;
+                    pcapWriters[handle] = new PCapNGWriter(new BinaryWriter(File.Create(String.Format("server-{0}.pcapng", Path.GetFileName(lpName)))));
                     queue.Add(String.Format("Handle({1:X08}) = Server(\"{0}\")", lpName, handle.ToInt32()));
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("CreateNamedPipe Error: {0}", ex.Message));
             }
 
             return handle;
@@ -192,8 +197,9 @@ namespace SwissArmyHook
                     queue.Add(String.Format("Port({0:X08}) = Handle({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("CreateIoCompletionPort Error: {0}", ex.Message));
             }
 
             return result;
@@ -222,6 +228,7 @@ namespace SwissArmyHook
                         // show the data that was read
                         byte[] buffer = new byte[lpNumberOfBytesRead];
                         Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesRead);
+                        OnDataReceived(hFile, buffer);
                         queue.Add(String.Format("Read(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
                     }
                     // if the read is async (overlapped)
@@ -229,6 +236,7 @@ namespace SwissArmyHook
                     {
                         // associate the overlapped structure w/ the buffer
                         overlappedToBuffer.AddOrUpdate(lpOverlapped, lpBuffer, (a, b) => lpBuffer);
+                        overlappedToDirection.AddOrUpdate(lpOverlapped, false, (a, b) => false);
                         queue.Add(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
                     }
                     // otherwise, something unexpected happened
@@ -238,8 +246,9 @@ namespace SwissArmyHook
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("ReadFile Error: {0}", ex.Message));
             }
 
             return result;
@@ -269,6 +278,7 @@ namespace SwissArmyHook
                         int count = lpNumberOfBytesWritten == IntPtr.Zero ? (int)nNumberOfBytesToWrite : Marshal.ReadInt32(lpNumberOfBytesWritten); // uint -> int !!
                         byte[] buffer = new byte[count];
                         Marshal.Copy(lpBuffer, buffer, 0, (int)count);
+                        OnDataSent(hFile, buffer);
                         queue.Add(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
                     }
                     // if the read is async (overlapped)
@@ -276,6 +286,7 @@ namespace SwissArmyHook
                     {
                         // associate the overlapped structure w/ the buffer
                         overlappedToBuffer.AddOrUpdate(lpOverlapped, lpBuffer, (a, b) => lpBuffer);
+                        overlappedToDirection.AddOrUpdate(lpOverlapped, true, (a, b) => true);
                         queue.Add(String.Format("Write(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
                     }
                     // otherwise, something unexpected happened
@@ -313,8 +324,9 @@ namespace SwissArmyHook
                     queue.Add(String.Format("!! ReadEx({0:X08})", hFile.ToInt32()));
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("ReadFileEx Error: {0}", ex.Message));
             }
 
             return result;
@@ -340,8 +352,9 @@ namespace SwissArmyHook
                     queue.Add(String.Format("!! WriteEx({0:X08})", hFile.ToInt32()));
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("WriteFileEx Error: {0}", ex.Message));
             }
 
             return result;
@@ -367,8 +380,9 @@ namespace SwissArmyHook
                     queue.Add(String.Format("!! GetResult({0:X08})", hFile.ToInt32()));
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("GetOverlappedResult Error: {0}", ex.Message));
             }
 
             return result;
@@ -398,6 +412,10 @@ namespace SwissArmyHook
                         var lpBuffer = overlappedToBuffer[lpOverlapped];
                         byte[] buffer = new byte[lpNumberOfBytes];
                         Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytes);
+                        if (overlappedToDirection[lpOverlapped])
+                            OnDataSent(completionKeyToHandle[lpCompletionKey], buffer);
+                        else
+                            OnDataReceived(completionKeyToHandle[lpCompletionKey], buffer);
                         queue.Add(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
                     }
                     // otherwise, nothing to do
@@ -407,8 +425,9 @@ namespace SwissArmyHook
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("GetQueuedCompletionStatus Error: {0}\n{1}", ex.Message, ex.StackTrace));
             }
 
             return result;
@@ -434,13 +453,24 @@ namespace SwissArmyHook
                     queue.Add(String.Format("!! GetStatusEx({0:X08})", CompletionPort.ToInt32()));
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("GetQueuedCompletionStatusEx Error: {0}", ex.Message));
             }
 
             return result;
         }
         #endregion
+
+        private void OnDataSent(IntPtr handle, byte[] data)
+        {
+            pcapWriters[handle].WriteEnhancedPacketBlock(true, data);
+        }
+
+        private void OnDataReceived(IntPtr handle, byte[] data)
+        {
+            pcapWriters[handle].WriteEnhancedPacketBlock(false, data);
+        }
 
         private ServerInterface server = null;
         private BlockingCollection<string> queue = new BlockingCollection<string>();
@@ -449,5 +479,7 @@ namespace SwissArmyHook
         private ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>> ioPortToHandles = new ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>>();
         private ConcurrentDictionary<UIntPtr, IntPtr> completionKeyToHandle = new ConcurrentDictionary<UIntPtr, IntPtr>();
         private ConcurrentDictionary<IntPtr, IntPtr> overlappedToBuffer = new ConcurrentDictionary<IntPtr, IntPtr>();
+        private ConcurrentDictionary<IntPtr, bool> overlappedToDirection = new ConcurrentDictionary<IntPtr, bool>(); // sending is true
+        private ConcurrentDictionary<IntPtr, PCapNGWriter> pcapWriters = new ConcurrentDictionary<IntPtr, PCapNGWriter>();
     }
 }
