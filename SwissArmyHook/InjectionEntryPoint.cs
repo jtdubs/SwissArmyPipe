@@ -1,11 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using EasyHook;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Collections.Concurrent;
 
 namespace SwissArmyHook
 {
@@ -21,25 +18,67 @@ namespace SwissArmyHook
         {
             server.IsInstalled(RemoteHooking.GetCurrentProcessId());
 
-            var createFileHook = EasyHook.LocalHook.Create(
-               EasyHook.LocalHook.GetProcAddress("kernel32.dll", "CreateFileW"),
+            var createFileHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "CreateFileW"),
                new CreateFile_Delegate(CreateFile_Hook),
                this);
 
-            var readFileHook = EasyHook.LocalHook.Create(
-                EasyHook.LocalHook.GetProcAddress("kernel32.dll", "ReadFile"),
-                new ReadFile_Delegate(ReadFile_Hook),
-                this);
+            var createNamedPipeHook = EasyHook.LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "CreateNamedPipeW"),
+               new CreateNamedPipe_Delegate(CreateNamedPipe_Hook),
+               this);
 
-            var writeFileHook = EasyHook.LocalHook.Create(
-                EasyHook.LocalHook.GetProcAddress("kernel32.dll", "WriteFile"),
-                new WriteFile_Delegate(WriteFile_Hook),
-                this);
+            var createIoCompletionPortHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "CreateIoCompletionPort"),
+               new CreateIoCompletionPort_Delegate(CreateIoCompletionPort_Hook),
+               this);
+
+            var getOverlappedResultHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "GetOverlappedResult"),
+               new GetOverlappedResult_Delegate(GetOverlappedResult_Hook),
+               this);
+
+            var getQueuedCompletionStatusHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "GetQueuedCompletionStatus"),
+               new GetQueuedCompletionStatus_Delegate(GetQueuedCompletionStatus_Hook),
+               this);
+
+            var getQueuedCompletionStatusExHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "GetQueuedCompletionStatusEx"),
+               new GetQueuedCompletionStatusEx_Delegate(GetQueuedCompletionStatusEx_Hook),
+               this);
+
+            var readFileHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "ReadFile"),
+               new ReadFile_Delegate(ReadFile_Hook),
+               this);
+
+            var writeFileHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "WriteFile"),
+               new WriteFile_Delegate(WriteFile_Hook),
+               this);
+
+            var readFileExHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "ReadFileEx"),
+               new ReadFileEx_Delegate(ReadFileEx_Hook),
+               this);
+
+            var writeFileExHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "WriteFileEx"),
+               new WriteFileEx_Delegate(WriteFileEx_Hook),
+               this);
 
             createFileHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            createNamedPipeHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            createIoCompletionPortHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            getOverlappedResultHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            getQueuedCompletionStatusHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            getQueuedCompletionStatusExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             readFileHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             writeFileHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
-            
+            readFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            writeFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+
             server.ReportMessage("Installed!");
             RemoteHooking.WakeUpProcess();
 
@@ -47,15 +86,11 @@ namespace SwissArmyHook
             {
                 while (true)
                 {
-                    System.Threading.Thread.Sleep(500);
-                    string[] queued = null;
-                    lock (queue)
-                    {
-                        queued = queue.ToArray();
-                        queue.Clear();
-                    }
-                    if (queued != null) server.ReportMessages(queued);
-                    else server.Ping();
+                    string item;
+                    if (queue.TryTake(out item, 1000))
+                        server.ReportMessage(item);
+                    else
+                        server.Ping();
                 }
             }
             catch
@@ -63,43 +98,35 @@ namespace SwissArmyHook
             }
 
             createFileHook.Dispose();
+            createNamedPipeHook.Dispose();
+            createIoCompletionPortHook.Dispose();
+            getOverlappedResultHook.Dispose();
+            getQueuedCompletionStatusHook.Dispose();
+            getQueuedCompletionStatusExHook.Dispose();
             readFileHook.Dispose();
             writeFileHook.Dispose();
+            readFileExHook.Dispose();
+            writeFileExHook.Dispose();
 
             LocalHook.Release();
         }
 
-        // GetOverlappedResult https://msdn.microsoft.com/en-us/library/windows/desktop/ms683209(v=vs.85).aspx
-        // CreateIoCompletionPort  https://msdn.microsoft.com/en-us/library/windows/desktop/aa363862(v=vs.85).aspx
-        // GetQueuedCompletionStatus  https://msdn.microsoft.com/en-us/library/windows/desktop/aa364986(v=vs.85).aspx
-
         #region CreateFile
-        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
-        delegate IntPtr CreateFile_Delegate(String filename, UInt32 desiredAccess, UInt32 shareMode, IntPtr securityAttributes, UInt32 creationDisposition, UInt32 flagsAndAttributes, IntPtr templateFile);
-
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
-        private static extern IntPtr CreateFileW(String filename, UInt32 desiredAccess, UInt32 shareMode, IntPtr securityAttributes, UInt32 creationDisposition, UInt32 flagsAndAttributes, IntPtr templateFile);
+        private static extern IntPtr CreateFileW(String lpFileName, UInt32 dwDesiredAccess, UInt32 dwShareMode, IntPtr lpSecurityAttributes, UInt32 dwCreationDisposition, UInt32 dwFlagsAndAttributes, IntPtr hTemplateFile);
 
-        private IntPtr CreateFile_Hook(String filename, UInt32 desiredAccess, UInt32 shareMode, IntPtr securityAttributes, UInt32 creationDisposition, UInt32 flagsAndAttributes, IntPtr templateFile)
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate IntPtr CreateFile_Delegate(String lpFileName, UInt32 dwDesiredAccess, UInt32 dwShareMode, IntPtr lpSecurityAttributes, UInt32 dwCreationDisposition, UInt32 dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+        private IntPtr CreateFile_Hook(String lpFileName, UInt32 dwDesiredAccess, UInt32 dwShareMode, IntPtr lpSecurityAttributes, UInt32 dwCreationDisposition, UInt32 dwFlagsAndAttributes, IntPtr hTemplateFile)
         {
-            var handle = CreateFileW(filename, desiredAccess, shareMode, securityAttributes, creationDisposition, flagsAndAttributes, templateFile);
+            var handle = CreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
           
             try
             {
-                if (handle.ToInt32() == -1)
-                    return handle;
-
-                if (String.IsNullOrEmpty(filename))
-                    return handle;
-                
-                if (!filename.StartsWith(@"\\.\pipe\", StringComparison.InvariantCultureIgnoreCase))
-                    return handle;
-                   
-                namedPipeHandles[handle] = filename;
-
-                lock (queue)
+                if (lpFileName.StartsWith(@"\\.\pipe\", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    queue.Enqueue(String.Format("CreateFile(\"{0}\") = {1:X08}", filename, handle.ToInt32()));
+                    queue.Add(String.Format("CreateFile(\"{0}\") = {1:X08}", lpFileName, handle.ToInt32()));
                 }
             }
             catch
@@ -110,122 +137,208 @@ namespace SwissArmyHook
         }
         #endregion
 
-        #region ReadFile
-        [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
-        delegate bool ReadFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
+        #region CreateNamedPipe
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern IntPtr CreateNamedPipeW(String lpName, UInt32 dwOpenMode, UInt32 dwPipeMode, UInt32 nMaxInstances, UInt32 nOutBufferSize, UInt32 nInBufferSize, UInt32 nDefaultTimeOut, IntPtr lpSecurityAttributes);
 
-        [DllImport("kernel32.dll", SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate IntPtr CreateNamedPipe_Delegate(String lpName, UInt32 dwOpenMode, UInt32 dwPipeMode, UInt32 nMaxInstances, UInt32 nOutBufferSize, UInt32 nInBufferSize, UInt32 nDefaultTimeOut, IntPtr lpSecurityAttributes);
+
+        private IntPtr CreateNamedPipe_Hook(String lpName, UInt32 dwOpenMode, UInt32 dwPipeMode, UInt32 nMaxInstances, UInt32 nOutBufferSize, UInt32 nInBufferSize, UInt32 nDefaultTimeOut, IntPtr lpSecurityAttributes)
+        {
+            var handle = CreateNamedPipeW(lpName, dwOpenMode, dwPipeMode, nMaxInstances, nOutBufferSize, nInBufferSize, nDefaultTimeOut, lpSecurityAttributes);
+
+            try
+            {
+                queue.Add(String.Format("CreateNamedPipe(\"{0}\") = {1:X08}", lpName, handle.ToInt32()));
+            }
+            catch
+            {
+            }
+
+            return handle;
+        }
+        #endregion
+
+        #region CreateIoCompletionPort
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern IntPtr CreateIoCompletionPort(IntPtr FileHandle, IntPtr ExistingCompletionPort, UIntPtr CompletionKey, uint NumberOfConcurrentThreads);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate IntPtr CreateIoCompletionPort_Delegate(IntPtr FileHandle, IntPtr ExistingCompletionPort, UIntPtr CompletionKey, uint NumberOfConcurrentThreads);
+
+        private IntPtr CreateIoCompletionPort_Hook(IntPtr FileHandle, IntPtr ExistingCompletionPort, UIntPtr CompletionKey, uint NumberOfConcurrentThreads)
+        {
+            var result = CreateIoCompletionPort(FileHandle, ExistingCompletionPort, CompletionKey, NumberOfConcurrentThreads);
+
+            try
+            {
+                queue.Add(String.Format("CreateIoCompletionPort()"));
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region GetOverlappedResult
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool GetOverlappedResult(IntPtr hFile, ref System.Threading.NativeOverlapped lpOverlapped, out uint lpNumberOfBytesTransferred, bool bWait);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool GetOverlappedResult_Delegate(IntPtr hFile, ref System.Threading.NativeOverlapped lpOverlapped, out uint lpNumberOfBytesTransferred, bool bWait);
+
+        private bool GetOverlappedResult_Hook(IntPtr hFile, ref System.Threading.NativeOverlapped lpOverlapped, out uint lpNumberOfBytesTransferred, bool bWait)
+        {
+            var result = GetOverlappedResult(hFile, ref lpOverlapped, out lpNumberOfBytesTransferred, bWait);
+
+            try
+            {
+                queue.Add(String.Format("GetOverlappedResult()"));
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region GetQueuedCompletionStatus
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool GetQueuedCompletionStatus(IntPtr CompletionPort, out uint lpNumberOfBytes, out IntPtr lpCompletionKey, out NativeOverlapped lpOverlapped, uint dwMilliseconds);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool GetQueuedCompletionStatus_Delegate(IntPtr CompletionPort, out uint lpNumberOfBytes, out IntPtr lpCompletionKey, out NativeOverlapped lpOverlapped, uint dwMilliseconds);
+
+        private bool GetQueuedCompletionStatus_Hook(IntPtr CompletionPort, out uint lpNumberOfBytes, out IntPtr lpCompletionKey, out NativeOverlapped lpOverlapped, uint dwMilliseconds)
+        {
+            var result = GetQueuedCompletionStatus(CompletionPort, out lpNumberOfBytes, out lpCompletionKey, out lpOverlapped, dwMilliseconds);
+
+            try
+            {
+                queue.Add(String.Format("GetQueuedCompletionStatus()"));
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region GetQueuedCompletionStatusEx
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool GetQueuedCompletionStatusEx(IntPtr CompletionPort, IntPtr lpCompletionPortEntries, uint ulCount, out uint ulNumEntriesRemoved, uint dwMilliseconds, bool fAlertable);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool GetQueuedCompletionStatusEx_Delegate(IntPtr CompletionPort, IntPtr lpCompletionPortEntries, uint ulCount, out uint ulNumEntriesRemoved, uint dwMilliseconds, bool fAlertable);
+
+        private bool GetQueuedCompletionStatusEx_Hook(IntPtr CompletionPort, IntPtr lpCompletionPortEntries, uint ulCount, out uint ulNumEntriesRemoved, uint dwMilliseconds, bool fAlertable)
+        {
+            var result = GetQueuedCompletionStatusEx(CompletionPort, lpCompletionPortEntries, ulCount, out ulNumEntriesRemoved, dwMilliseconds, fAlertable);
+
+            try
+            {
+                queue.Add(String.Format("GetQueuedCompletionStatusEx()"));
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region ReadFile
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
         private static extern bool ReadFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool ReadFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
 
         private bool ReadFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped)
         {
-            if (!namedPipeHandles.ContainsKey(hFile))
-                return ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, out lpNumberOfBytesRead, lpOverlapped);
+            var result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, out lpNumberOfBytesRead, lpOverlapped);
 
-            bool result = false;
-
-            if (lpOverlapped == IntPtr.Zero)
+            try
             {
-                result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, out lpNumberOfBytesRead, lpOverlapped);
-
-                if (result)
-                {
-                    byte[] buffer = new byte[lpNumberOfBytesRead];
-                    Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesRead);
-
-                    lock (queue)
-                    {
-                        queue.Enqueue(String.Format("ReadFile({0:X08}) = {1}", hFile.ToInt32(), BitConverter.ToString(buffer)));
-                    }
-                }
+                queue.Add(String.Format("ReadFile()"));
             }
-            else
+            catch
             {
-                result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, out lpNumberOfBytesRead, lpOverlapped);
-
-                if (result)
-                {
-                    lock (queue)
-                    {
-                        queue.Enqueue(String.Format("ReadFile({0:X08}) = async success", hFile.ToInt32()));
-                    }
-                }
-                else if (Marshal.GetLastWin32Error() == 997) // ERROR_IO_PENDING
-                {
-                    var overlapped = Marshal.PtrToStructure<NativeOverlapped>(lpOverlapped);
-
-                    lock (queue)
-                    {
-                        queue.Enqueue(String.Format("ReadFile({0:X08}) = async: {1:X08}", hFile.ToInt32(), lpOverlapped.ToInt32()));
-                    }
-                }
-                else
-                {
-                    var overlapped = Marshal.PtrToStructure<NativeOverlapped>(lpOverlapped);
-
-                    lock (queue)
-                    {
-                        queue.Enqueue(String.Format("ReadFile({0:X08}) = async fail: {1}, {2}", hFile.ToInt32(), Marshal.GetLastWin32Error(), overlapped.InternalLow));
-                    }
-                }
             }
-            
+
             return result;
         }
         #endregion
 
         #region WriteFile
-        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        delegate bool WriteFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
-
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
-        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool WriteFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool WriteFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
 
         private bool WriteFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped)
         {
-            if (!namedPipeHandles.ContainsKey(hFile))
-                return WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, out lpNumberOfBytesWritten, lpOverlapped);
+            var result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, out lpNumberOfBytesWritten, lpOverlapped);
 
-            bool result = false;
-
-            if (lpOverlapped == IntPtr.Zero)
+            try
             {
-                result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, out lpNumberOfBytesWritten, lpOverlapped);
-
-                if (result)
-                {
-                    // byte[] buffer = new byte[lpNumberOfBytesWritten];
-                    // Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesWritten);
-
-                    lock (queue)
-                    {
-                        queue.Enqueue(String.Format("WriteFile({0:X08}) = {1}", hFile.ToInt32(), "data")); // BitConverter.ToString(buffer)));
-                    }
-                }
+                queue.Add(String.Format("WriteFile()"));
             }
-            else
+            catch
             {
-                result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, out lpNumberOfBytesWritten, lpOverlapped);
-
-                // var overlapped = Marshal.PtrToStructure<NativeOverlapped>(lpOverlapped);
-
-                /*new ManualResetEvent()
-
-                var newOverlapped = new NativeOverlapped()
-                {
-                    OffsetLow = overlapped.OffsetLow,
-                    OffsetHigh = overlapped.OffsetHigh,
-                    EventHandle = CreateEvent(IntPtr.Zero, true, false, null)
-                };*/
-
-                lock (queue)
-                {
-                    queue.Enqueue(String.Format("WriteFile({0:X08}) = {1}", hFile.ToInt32(), "overlapped")); // overlapped.ToString()));
-                }
             }
 
+            return result;
+        }
+        #endregion
+
+        #region ReadFileEx
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool ReadFileEx(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, IntPtr lpOverlapped, IOCompletionCallback lpCompletionRoutine);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool ReadFileEx_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, IntPtr lpOverlapped, IOCompletionCallback lpCompletionRoutine);
+
+        private bool ReadFileEx_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, IntPtr lpOverlapped, IOCompletionCallback lpCompletionRoutine)
+        {
+            var result = ReadFileEx(hFile, lpBuffer, nNumberOfBytesToRead, lpOverlapped, lpCompletionRoutine);
+
+            try
+            {
+                queue.Add(String.Format("ReadFileEx()"));
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region WriteFileEx
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool WriteFileEx(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpOverlapped, IOCompletionCallback lpCompletionRoutine);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool WriteFileEx_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpOverlapped, IOCompletionCallback lpCompletionRoutine);
+
+        private bool WriteFileEx_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpOverlapped, IOCompletionCallback lpCompletionRoutine)
+        {
+            var result = WriteFileEx(hFile, lpBuffer, nNumberOfBytesToWrite, lpOverlapped, lpCompletionRoutine);
+
+            try
+            {
+                queue.Add(String.Format("WriteFileEx()"));
+            }
+            catch
+            {
+            }
 
             return result;
         }
@@ -235,7 +348,6 @@ namespace SwissArmyHook
         static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, string lpName);
 
         private ServerInterface server = null;
-        private Queue<string> queue = new Queue<string>();
-        private Dictionary<IntPtr, string> namedPipeHandles = new Dictionary<IntPtr, string>();
+        BlockingCollection<string> queue = new BlockingCollection<string>();
     }
 }

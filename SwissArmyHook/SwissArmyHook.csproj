@@ -47,6 +47,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="NativeOverlappedEntry.cs" />
     <Compile Include="ServerInterface.cs" />
     <Compile Include="InjectionEntryPoint.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
