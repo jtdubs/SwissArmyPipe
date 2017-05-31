@@ -8,17 +8,32 @@ using System.IO;
 
 namespace SwissArmyHook
 {
+    /// <summary>
+    /// The hook that is injectioned into the application
+    /// </summary>
     public class InjectionEntryPoint : IEntryPoint
     {
+        /// <summary>
+        /// Construct the hook
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="channelName"></param>
         public InjectionEntryPoint(RemoteHooking.IContext context, string channelName)
         {
+            // create RPC interface back to SAP process
             server = RemoteHooking.IpcConnectClient<ServerInterface>(channelName);
-            server.Ping();
         }
-
+        
+        /// <summary>
+        /// Hook the required functions
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="channelName"></param>
         public void Run(RemoteHooking.IContext context, string channelName)
         {
-            server.IsInstalled(RemoteHooking.GetCurrentProcessId());
+            server.ReportInstalled(RemoteHooking.GetCurrentProcessId());
+
+            // hook interesting functions
 
             var createFileHook = LocalHook.Create(
                LocalHook.GetProcAddress("kernel32.dll", "CreateFileW"),
@@ -69,7 +84,8 @@ namespace SwissArmyHook
                LocalHook.GetProcAddress("kernel32.dll", "WriteFileEx"),
                new WriteFileEx_Delegate(WriteFileEx_Hook),
                this);
-
+            
+            // don't run hooks on this thread, otherwise we'll recurse to our doom! 
             createFileHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             createNamedPipeHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             createIoCompletionPortHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
@@ -81,24 +97,25 @@ namespace SwissArmyHook
             readFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             writeFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
 
-            server.ReportMessage("Installed!");
+            // wake up the hooked process
             RemoteHooking.WakeUpProcess();
 
             try
             {
+                // main loop
                 while (true)
                 {
+                    // grab the next message from the queue and send it back to the SAP process
                     string item;
                     if (queue.TryTake(out item, 1000))
                         server.ReportMessage(item);
-                    else
-                        server.Ping();
                 }
             }
             catch
             {
             }
 
+            // clean up all the hooks
             createFileHook.Dispose();
             createNamedPipeHook.Dispose();
             createIoCompletionPortHook.Dispose();
@@ -110,6 +127,7 @@ namespace SwissArmyHook
             readFileExHook.Dispose();
             writeFileExHook.Dispose();
 
+            // final clean-up
             LocalHook.Release();
         }
 

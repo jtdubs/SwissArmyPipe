@@ -4,50 +4,72 @@ using System.Runtime.InteropServices;
 
 namespace SwissArmyHook
 {
+    /// <summary>
+    /// Simple writer for .pcapng file format
+    /// </summary>
     public class PCapNGWriter
     {
+        /// <summary>
+        /// Create a writer on top of the given BinaryWriter
+        /// </summary>
+        /// <param name="writer"></param>
         public PCapNGWriter(BinaryWriter writer)
         {
             this.writer = writer;
+
+            // automatically write out mandatory headers
             WriteSectionHeaderBlock();
             WriteInterfaceDescriptorBlock();
         }
 
+        /// <summary>
+        /// Write mandatory Section Header Block
+        /// 
+        /// TODO: remove locks (single thread in main code w/ concurrent queue)
+        /// </summary>
         private void WriteSectionHeaderBlock()
         {
-            writer.Write((UInt32)0x0A0D0D0A);          // block type
-            writer.Write((UInt32)28);                  // block length
-            writer.Write((UInt32)0x1A2B3C4D);          // magic
-            writer.Write((UInt16)1);                   // major
-            writer.Write((UInt16)0);                   // minor
-            writer.Write((UInt64)0xFFFFFFFFFFFFFFFFL); // section length
-            writer.Write((UInt32)28);                  // block length
-            writer.Flush();
+            lock (writer)
+            {
+                writer.Write((UInt32)0x0A0D0D0A);          // block type
+                writer.Write((UInt32)28);                  // block length
+                writer.Write((UInt32)0x1A2B3C4D);          // magic
+                writer.Write((UInt16)1);                   // major
+                writer.Write((UInt16)0);                   // minor
+                writer.Write((UInt64)0xFFFFFFFFFFFFFFFFL); // section length
+                writer.Write((UInt32)28);                  // block length
+                writer.Flush();
+            }
         }
 
+        /// <summary>
+        /// Write mandatory Interface Descriptor Block
+        /// </summary>
         private void WriteInterfaceDescriptorBlock()
         {
-            writer.Write((UInt32)0x00000001);    // block type
-            writer.Write((UInt32)52);            // block length
-            // writer.Write((UInt16)0);           // LINKTYPE_NULL
-            writer.Write((UInt16)101);           // LINKTYPE_RAW
-            // writer.Write((UInt16)107);           // LINKTYPE_FRELAY
-            writer.Write((UInt16)0);             // reserved
-            writer.Write((UInt32)0);             // snap len
-            // options {
-            writer.Write((UInt16)2);             // if_name
-            writer.Write((UInt16)3);             // len
-            writer.Write("SAP\0".ToCharArray());
-            writer.Write((UInt16)3);             // if_description
-            writer.Write((UInt16)13);            // len
-            writer.Write("SwissArmyPipe\0\0\0".ToCharArray());
-            writer.Write((UInt16)0);             // opt_endofopt
-            writer.Write((UInt16)0);             // len
-            // }
-            writer.Write((UInt32)52);            // block length
-            writer.Flush();
+            lock (writer)
+            {
+                writer.Write((UInt32)0x00000001);    // block type
+                writer.Write((UInt32)52);            // block length
+                writer.Write((UInt16)101);           // LINKTYPE_RAW
+                writer.Write((UInt16)0);             // reserved
+                writer.Write((UInt32)0);             // snap len
+                                                     // options {
+                writer.Write((UInt16)2);             // if_name
+                writer.Write((UInt16)3);             // len
+                writer.Write("SAP\0".ToCharArray());
+                writer.Write((UInt16)3);             // if_description
+                writer.Write((UInt16)13);            // len
+                writer.Write("SwissArmyPipe\0\0\0".ToCharArray());
+                writer.Write((UInt16)0);             // opt_endofopt
+                writer.Write((UInt16)0);             // len
+                                                     // }
+                writer.Write((UInt32)52);            // block length
+                writer.Flush();
+            }
         }
 
+        /*
         public void WriteEnhancedPacketBlock(bool sent, byte[] packet)
         {
             lock (writer)
@@ -69,11 +91,21 @@ namespace SwissArmyHook
                 writer.Flush();
             }
         }
+        */
 
+        /// <summary>
+        /// Write simulated "UDP/IP" packet
+        /// </summary>
+        /// <param name="srcIP"></param>
+        /// <param name="srcPort"></param>
+        /// <param name="dstIP"></param>
+        /// <param name="dstPort"></param>
+        /// <param name="packet"></param>
         public void WriteIPPacketBlock(UInt32 srcIP, UInt16 srcPort, UInt32 dstIP, UInt16 dstPort, byte[] packet)
         {
             lock (writer)
             {
+                // calculate packet time and required lengths
                 ulong time = (ulong)((DateTime.Now - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds * 1000);
                 int padding = (4 - ((packet.Length) % 4)) % 4;
 
@@ -81,7 +113,7 @@ namespace SwissArmyHook
                 UInt16 tcpLen = (UInt16)(20 + udpLen);
                 UInt16 totalLen = (UInt16)(tcpLen + padding);
 
-                // block header
+                // pcapng block header
                 writer.Write((UInt32)0x00000006);          // block type
                 writer.Write((UInt32)(32 + totalLen));     // block length
                 writer.Write((UInt32)0);                   // interface ID
@@ -123,7 +155,7 @@ namespace SwissArmyHook
                 writer.Write(packet);
                 writer.Write(new byte[] { 0, 0, 0, 0 }, 0, padding);
 
-                // block footer
+                // pcapng block footer
                 writer.Write((UInt32)(32 + totalLen));     // block length
 
                 writer.Flush();

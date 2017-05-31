@@ -7,15 +7,24 @@ namespace SwissArmyPipe
     {
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr CreateNamedPipe(
-            string lpName, uint dwOpenMode,
-            uint dwPipeMode, uint nMaxInstances, uint nOutBufferSize, uint nInBufferSize,
-            uint nDefaultTimeOut, IntPtr lpSecurityAttributes);
+            string lpName,
+            uint dwOpenMode,
+            uint dwPipeMode,
+            int nMaxInstances,
+            uint nOutBufferSize,
+            uint nInBufferSize,
+            uint nDefaultTimeOut,
+            IntPtr lpSecurityAttributes);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool GetNamedPipeClientProcessId(IntPtr Pipe, out long ClientProcessId);
+        public static extern bool GetNamedPipeClientProcessId(
+            IntPtr Pipe,
+            out long ClientProcessId);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool GetNamedPipeServerProcessId(IntPtr Pipe, out long ClientProcessId);
+        public static extern bool GetNamedPipeServerProcessId(
+            IntPtr Pipe,
+            out long ClientProcessId);
 
         [DllImport("kernel32.dll",  SetLastError = true)]
         public static extern IntPtr CreateFile(
@@ -28,7 +37,8 @@ namespace SwissArmyPipe
             IntPtr hTemplateFile);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool CloseHandle(IntPtr handle);
+        public static extern bool CloseHandle(
+            IntPtr handle);
 
         [Flags]
         public enum PipeOpenModeFlags : uint

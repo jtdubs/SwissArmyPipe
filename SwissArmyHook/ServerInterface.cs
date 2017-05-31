@@ -2,42 +2,36 @@
 
 namespace SwissArmyHook
 {
+    /// <summary>
+    /// RPC class to allow hooked app to run code within SAP process
+    /// </summary>
     public class ServerInterface : MarshalByRefObject
     {
-        public void IsInstalled(int clientPID)
+        /// <summary>
+        /// Report that SAP is instlled
+        /// </summary>
+        /// <param name="clientPID"></param>
+        public void ReportInstalled(int clientPID)
         {
-            Console.WriteLine("Installed into PID {0}", clientPID);
+            Console.Error.WriteLine("SAP Hook Installed: PID = {0}", clientPID);
         }
 
-        public void ReportMessages(string[] messages)
-        {
-            foreach (var m in messages)
-                Console.WriteLine("Message: {0}", m);
-        }
-
+        /// <summary>
+        /// Report an informational message
+        /// </summary>
+        /// <param name="message"></param>
         public void ReportMessage(string message)
         {
-            Console.WriteLine("Message: {0}", message);
+            Console.Error.WriteLine("SAP: {0}", message);
         }
 
+        /// <summary>
+        /// Report an exception
+        /// </summary>
+        /// <param name="ex"></param>
         public void ReportException(Exception ex)
         {
-            Console.WriteLine("Exception: {0}", ex.Message);
-        }
-
-        int count = 0;
-        public void Ping()
-        {
-            var oldTop = Console.CursorTop;
-            var oldLeft = Console.CursorLeft;
-            Console.CursorVisible = false;
-
-            var chars = "\\|/-";
-            Console.SetCursorPosition(Console.WindowWidth - 1, oldTop - 1);
-            Console.Write(chars[count++ % chars.Length]);
-
-            Console.SetCursorPosition(oldLeft, oldTop);
-            Console.CursorVisible = true;
+            Console.Error.WriteLine("SAP Exception: {0}", ex.Message);
         }
     }
 }
