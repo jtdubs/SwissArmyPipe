@@ -10,6 +10,8 @@ namespace SwissArmyHook
 {
     /// <summary>
     /// The hook that is injectioned into the application
+    /// 
+    /// TODO: use WaitNamedPipe and ConnectNamedPipe to associate handles w/ PIDs.  use PIDs as UDP ports.
     /// </summary>
     public class InjectionEntryPoint : IEntryPoint
     {
@@ -670,6 +672,7 @@ namespace SwissArmyHook
         private BlockingCollection<Action> queue = new BlockingCollection<Action>();
 
         // TODO: clean-up unused or overcomplicated data structures
+        // TODO: remove keys from data structures once they are complete... (right now it just grows forever)
         private ConcurrentDictionary<IntPtr, string> pipeHandleToName = new ConcurrentDictionary<IntPtr, string>();
         private ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>> ioPortToHandles = new ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>>();
         private ConcurrentDictionary<UIntPtr, IntPtr> completionKeyToHandle = new ConcurrentDictionary<UIntPtr, IntPtr>();
