@@ -3,6 +3,7 @@ using EasyHook;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 
 namespace SwissArmyHook
 {
@@ -124,9 +125,10 @@ namespace SwissArmyHook
           
             try
             {
-                if (lpFileName.StartsWith(@"\\.\pipe\", StringComparison.InvariantCultureIgnoreCase))
+                if (handle.ToInt32() != -1 && lpFileName.StartsWith(@"\\.\pipe\", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    queue.Add(String.Format("CreateFile(\"{0}\") = {1:X08}", lpFileName, handle.ToInt32()));
+                    pipeHandleToName[handle] = lpFileName;
+                    queue.Add(String.Format("{1:X08} = Client({0})", lpFileName, handle.ToInt32()));
                 }
             }
             catch
@@ -150,7 +152,11 @@ namespace SwissArmyHook
 
             try
             {
-                queue.Add(String.Format("CreateNamedPipe(\"{0}\") = {1:X08}", lpName, handle.ToInt32()));
+                if (handle.ToInt32() != -1)
+                {
+                    pipeHandleToName[handle] = lpName;
+                    queue.Add(String.Format("{1:X08} = Server({0})", lpName, handle.ToInt32()));
+                }
             }
             catch
             {
@@ -173,7 +179,13 @@ namespace SwissArmyHook
 
             try
             {
-                queue.Add(String.Format("CreateIoCompletionPort()"));
+                if (pipeHandleToName.ContainsKey(FileHandle) && result.ToInt32() != 0)
+                {
+                    queue.Add(String.Format("IO({0:X08}) = Pipe({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
+                    ioPortToHandles.AddOrUpdate(result, new ConcurrentBag<IntPtr>(new IntPtr[] { FileHandle }), (n, b) => { b.Add(n); return b; });
+                    handleToCompletionKey.AddOrUpdate(FileHandle, h => CompletionKey, (f, h) => CompletionKey);
+                    completionKeyToHandle.AddOrUpdate(CompletionKey, k => FileHandle, (k, h) => FileHandle);
+                }
             }
             catch
             {
@@ -196,7 +208,10 @@ namespace SwissArmyHook
 
             try
             {
-                queue.Add(String.Format("GetOverlappedResult()"));
+                if (pipeHandleToName.ContainsKey(hFile))
+                {
+                    queue.Add(String.Format("!! GetResult({0:X08})", hFile.ToInt32()));
+                }
             }
             catch
             {
@@ -208,18 +223,32 @@ namespace SwissArmyHook
 
         #region GetQueuedCompletionStatus
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
-        private static extern bool GetQueuedCompletionStatus(IntPtr CompletionPort, out uint lpNumberOfBytes, out IntPtr lpCompletionKey, out NativeOverlapped lpOverlapped, uint dwMilliseconds);
+        private static extern bool GetQueuedCompletionStatus(IntPtr CompletionPort, out uint lpNumberOfBytes, out UIntPtr lpCompletionKey, out IntPtr lpOverlapped, uint dwMilliseconds);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
-        private delegate bool GetQueuedCompletionStatus_Delegate(IntPtr CompletionPort, out uint lpNumberOfBytes, out IntPtr lpCompletionKey, out NativeOverlapped lpOverlapped, uint dwMilliseconds);
+        private delegate bool GetQueuedCompletionStatus_Delegate(IntPtr CompletionPort, out uint lpNumberOfBytes, out UIntPtr lpCompletionKey, out IntPtr lpOverlapped, uint dwMilliseconds);
 
-        private bool GetQueuedCompletionStatus_Hook(IntPtr CompletionPort, out uint lpNumberOfBytes, out IntPtr lpCompletionKey, out NativeOverlapped lpOverlapped, uint dwMilliseconds)
+        private bool GetQueuedCompletionStatus_Hook(IntPtr CompletionPort, out uint lpNumberOfBytes, out UIntPtr lpCompletionKey, out IntPtr lpOverlapped, uint dwMilliseconds)
         {
             var result = GetQueuedCompletionStatus(CompletionPort, out lpNumberOfBytes, out lpCompletionKey, out lpOverlapped, dwMilliseconds);
 
             try
             {
-                queue.Add(String.Format("GetQueuedCompletionStatus()"));
+                if (ioPortToHandles.ContainsKey(CompletionPort) && completionKeyToHandle.ContainsKey(lpCompletionKey))
+                {
+                    if (result)
+                    {
+                        var lpBuffer = handleToReadBuffer[completionKeyToHandle[lpCompletionKey]];
+                        byte[] buffer = new byte[lpNumberOfBytes];
+                        Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytes);
+
+                        queue.Add(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & <{3}>", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
+                    }
+                    else
+                    {
+                        queue.Add(String.Format("GetStatus(IO({0:X08})) = <NOT READY>", CompletionPort.ToInt32()));
+                    }
+                }
             }
             catch
             {
@@ -242,7 +271,10 @@ namespace SwissArmyHook
 
             try
             {
-                queue.Add(String.Format("GetQueuedCompletionStatusEx()"));
+                if (ioPortToHandles.ContainsKey(CompletionPort))
+                {
+                    queue.Add(String.Format("!! GetStatusEx({0:X08})", CompletionPort.ToInt32()));
+                }
             }
             catch
             {
@@ -265,7 +297,25 @@ namespace SwissArmyHook
 
             try
             {
-                queue.Add(String.Format("ReadFile()"));
+                if (pipeHandleToName.ContainsKey(hFile))
+                {
+                    if (result)
+                    {
+                        byte[] buffer = new byte[lpNumberOfBytesRead];
+                        Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesRead);
+
+                        queue.Add(String.Format("Read({0:X08}, #{1}) -> <{2}>", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
+                    }
+                    else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
+                    {
+                        queue.Add(String.Format("Read({0:X08},#{1}) -> <PENDING> @ {2:X08}", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
+                        handleToReadBuffer.AddOrUpdate(hFile, lpBuffer, (a, b) => lpBuffer);
+                    }
+                    else
+                    {
+                        queue.Add(String.Format("Read({0:X08}, @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToRead));
+                    }
+                }
             }
             catch
             {
@@ -277,21 +327,40 @@ namespace SwissArmyHook
 
         #region WriteFile
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
-        private static extern bool WriteFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
+        private static extern bool WriteFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpNumberOfBytesWritten, IntPtr lpOverlapped);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
-        private delegate bool WriteFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
+        private delegate bool WriteFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpNumberOfBytesWritten, IntPtr lpOverlapped);
 
-        private bool WriteFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped)
+        private bool WriteFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpNumberOfBytesWritten, IntPtr lpOverlapped)
         {
-            var result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, out lpNumberOfBytesWritten, lpOverlapped);
+            var result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped);
 
             try
             {
-                queue.Add(String.Format("WriteFile()"));
+                if (pipeHandleToName.ContainsKey(hFile))
+                {
+                    if (result)
+                    {
+                        int count = lpNumberOfBytesWritten == IntPtr.Zero ? (int)nNumberOfBytesToWrite : Marshal.ReadInt32(lpNumberOfBytesWritten); // uint -> int !!
+                        byte[] buffer = new byte[count];
+                        Marshal.Copy(lpBuffer, buffer, 0, (int)count);
+                        queue.Add(String.Format("Write({0:X08}, #{1}) -> <{2}>", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
+                    }
+                    else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
+                    {
+                        queue.Add(String.Format("Write({0:X08}, #{1}) -> <PENDING> @ {2:X08}", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
+                        handleToWriteBuffer.AddOrUpdate(hFile, lpBuffer, (a, b) => lpBuffer);
+                    }
+                    else
+                    {
+                        queue.Add(String.Format("Write({0:X08}, #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToWrite));
+                    }
+                }
             }
-            catch
+            catch (Exception ex)
             {
+                queue.Add(String.Format("WriteFile error: 0}", ex.Message));
             }
 
             return result;
@@ -311,7 +380,10 @@ namespace SwissArmyHook
 
             try
             {
-                queue.Add(String.Format("ReadFileEx()"));
+                if (pipeHandleToName.ContainsKey(hFile))
+                {
+                    queue.Add(String.Format("!! ReadEx({0:X08})", hFile.ToInt32()));
+                }
             }
             catch
             {
@@ -334,7 +406,10 @@ namespace SwissArmyHook
 
             try
             {
-                queue.Add(String.Format("WriteFileEx()"));
+                if (pipeHandleToName.ContainsKey(hFile))
+                {
+                    queue.Add(String.Format("!! WriteEx({0:X08})", hFile.ToInt32()));
+                }
             }
             catch
             {
@@ -344,10 +419,14 @@ namespace SwissArmyHook
         }
         #endregion
 
-        [DllImport("kernel32.dll")]
-        static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, string lpName);
-
         private ServerInterface server = null;
-        BlockingCollection<string> queue = new BlockingCollection<string>();
+        private BlockingCollection<string> queue = new BlockingCollection<string>();
+
+        private ConcurrentDictionary<IntPtr, string> pipeHandleToName = new ConcurrentDictionary<IntPtr, string>();
+        private ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>> ioPortToHandles = new ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>>();
+        private ConcurrentDictionary<IntPtr, UIntPtr> handleToCompletionKey = new ConcurrentDictionary<IntPtr, UIntPtr>();
+        private ConcurrentDictionary<UIntPtr, IntPtr> completionKeyToHandle = new ConcurrentDictionary<UIntPtr, IntPtr>();
+        private ConcurrentDictionary<IntPtr, IntPtr> handleToReadBuffer = new ConcurrentDictionary<IntPtr, IntPtr>();
+        private ConcurrentDictionary<IntPtr, IntPtr> handleToWriteBuffer = new ConcurrentDictionary<IntPtr, IntPtr>();
     }
 }
