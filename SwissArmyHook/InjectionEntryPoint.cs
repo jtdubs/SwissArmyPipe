@@ -464,12 +464,14 @@ namespace SwissArmyHook
 
         private void OnDataSent(IntPtr handle, byte[] data)
         {
-            pcapWriters[handle].WriteEnhancedPacketBlock(true, data);
+            // pcapWriters[handle].WriteEnhancedPacketBlock(true, data);
+            pcapWriters[handle].WriteIPPacketBlock(0x7F000001, 1000, 0x7F000001, 2000, data);
         }
 
         private void OnDataReceived(IntPtr handle, byte[] data)
         {
-            pcapWriters[handle].WriteEnhancedPacketBlock(false, data);
+            // pcapWriters[handle].WriteEnhancedPacketBlock(false, data);
+            pcapWriters[handle].WriteIPPacketBlock(0x7F000001, 2000, 0x7F000001, 1000, data);
         }
 
         private ServerInterface server = null;
