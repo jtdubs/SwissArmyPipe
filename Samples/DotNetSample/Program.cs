@@ -13,8 +13,6 @@ namespace DotNetSample
     {
         static void Main(string[] args)
         {
-            Thread.Sleep(1000);
-
             using (var done = new Semaphore(0, 2))
             using (var server = new NamedPipeServerStream("dotnet_async_message", PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.Asynchronous))
             using (var client = new NamedPipeClientStream(".", "dotnet_async_message", PipeDirection.InOut, PipeOptions.Asynchronous))
@@ -27,9 +25,7 @@ namespace DotNetSample
                     writer.AutoFlush = true;
                     for (int i = 0; i < 10; i++)
                     {
-                        Thread.Sleep(1000);
                         writer.WriteLine("sample request");
-                        Thread.Sleep(1000);
                         reader.ReadLine();
                     }
                     done.Release();
@@ -43,9 +39,7 @@ namespace DotNetSample
                     writer.AutoFlush = true;
                     for (int i = 0; i < 10; i++)
                     {
-                        Thread.Sleep(1000);
                         reader.ReadLine();
-                        Thread.Sleep(1000);
                         writer.WriteLine("sample response");
                     }
                     done.Release();
@@ -53,9 +47,9 @@ namespace DotNetSample
 
                 done.WaitOne();
                 done.WaitOne();
-
-                Thread.Sleep(2000);
             }
+
+            Thread.Sleep(2000);
         }
     }
 }
