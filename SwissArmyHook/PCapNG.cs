@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace SwissArmyHook
 {
@@ -20,6 +21,7 @@ namespace SwissArmyHook
             // automatically write out mandatory headers
             WriteSectionHeaderBlock();
             WriteInterfaceDescriptorBlock();
+            headerWritten.Set();
         }
 
         /// <summary>
@@ -71,6 +73,8 @@ namespace SwissArmyHook
         /// <param name="packet"></param>
         public void WriteIPPacketBlock(UInt32 srcIP, UInt16 srcPort, UInt32 dstIP, UInt16 dstPort, byte[] packet)
         {
+            headerWritten.WaitOne();
+
             // calculate packet time and required lengths
             ulong time = (ulong)((DateTime.Now - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds * 1000);
             int padding = (4 - ((packet.Length) % 4)) % 4;
@@ -128,5 +132,6 @@ namespace SwissArmyHook
         }
         
         private BinaryWriter writer;
+        private ManualResetEvent headerWritten = new ManualResetEvent(false);
     }
 }
