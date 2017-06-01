@@ -177,8 +177,8 @@ namespace SwissArmyHook
                     string pcapFilename = String.Format("client-{0}.pcapng", Path.GetFileName(lpFileName));
 
                     // map the handle to the original pipe name and create a pcap file
-                    pipeHandleToName[handle] = lpFileName;
-                    pcapWriters[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
+                    pipeHandles[handle] = true;
+                    handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
 
                     // report message back to SAP process
                     OnMessage(String.Format("Handle({1:X08}) = Client(\"{0}\")", lpFileName, handle.ToInt32()));
@@ -229,8 +229,8 @@ namespace SwissArmyHook
                     string pcapFilename = String.Format("server-{0}.pcapng", Path.GetFileName(lpName));
 
                     // map the handle to the original pipe name and create a pcap file
-                    pipeHandleToName[handle] = lpName;
-                    pcapWriters[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
+                    pipeHandles[handle] = true;
+                    handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
 
                     // report message back to SAP process
                     OnMessage(String.Format("Handle({1:X08}) = Server(\"{0}\")", lpName, handle.ToInt32()));
@@ -272,11 +272,10 @@ namespace SwissArmyHook
             try
             {
                 // if a completion port was successfully associated with a known pipe
-                if (result.ToInt32() != 0 && pipeHandleToName.ContainsKey(FileHandle))
+                if (result.ToInt32() != 0 && pipeHandles.ContainsKey(FileHandle))
                 {
                     // associate completion port/key with pipe handle, 
-                    ioPortToHandles[result] = new ConcurrentBag<IntPtr>(new IntPtr[] { FileHandle });
-                    completionKeyToHandle[CompletionKey] = FileHandle;
+                    ioPorts[result] = true;
                     OnMessage(String.Format("Port({0:X08}) = Handle({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
                 }
             }
@@ -317,7 +316,7 @@ namespace SwissArmyHook
             try
             {
                 // if the read was for a known pipe
-                if (pipeHandleToName.ContainsKey(hFile))
+                if (pipeHandles.ContainsKey(hFile))
                 {
                     // if the read succeeded
                     if (result)
@@ -325,9 +324,8 @@ namespace SwissArmyHook
                         // if immediately completing async read (data was already available)
                         if (lpOverlapped.ToInt32() != 0)
                         {
-                            // associate the overlapped structure w/ the buffer
-                            overlappedToDirection[lpOverlapped] = false;
-                            overlappedToBuffer[lpOverlapped] = lpBuffer;
+                            // associate the overlapped structure w/ the request metadata
+                            overlappedToRequestInfo[lpOverlapped] = new RequestInfo() { Handle = hFile, Buffer = lpBuffer, Type = RequestType.Read };
                             OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
                         }
                         // if sync read
@@ -343,9 +341,8 @@ namespace SwissArmyHook
                     // if the read is async (overlapped)
                     else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
                     {
-                        // associate the overlapped structure w/ the buffer
-                        overlappedToDirection[lpOverlapped] = false;
-                        overlappedToBuffer[lpOverlapped] = lpBuffer;
+                        // associate the overlapped structure w/ the request metadata
+                        overlappedToRequestInfo[lpOverlapped] = new RequestInfo() { Handle = hFile, Buffer = lpBuffer, Type = RequestType.Read };
                         OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
                     }
                     // otherwise, something unexpected happened
@@ -392,7 +389,7 @@ namespace SwissArmyHook
             try
             {
                 // if the write was for a pipe
-                if (pipeHandleToName.ContainsKey(hFile))
+                if (pipeHandles.ContainsKey(hFile))
                 {
                     // if the write succeeded
                     if (result)
@@ -407,9 +404,8 @@ namespace SwissArmyHook
                     // if the read is async (overlapped)
                     else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
                     {
-                        // associate the overlapped structure w/ the buffer
-                        overlappedToDirection[lpOverlapped] = true;
-                        overlappedToBuffer[lpOverlapped] = lpBuffer;
+                        // associate the overlapped structure w/ the request meatadata
+                        overlappedToRequestInfo[lpOverlapped] = new RequestInfo() { Handle = hFile, Buffer = lpBuffer, Type = RequestType.Write };
                         OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
                     }
                     // otherwise, something unexpected happened
@@ -456,7 +452,7 @@ namespace SwissArmyHook
             try
             {
                 // not supported yet
-                if (pipeHandleToName.ContainsKey(hFile))
+                if (pipeHandles.ContainsKey(hFile))
                 {
                     OnMessage(String.Format("!! ReadEx({0:X08})", hFile.ToInt32()));
                 }
@@ -497,7 +493,7 @@ namespace SwissArmyHook
             try
             {
                 // not supported yet
-                if (pipeHandleToName.ContainsKey(hFile))
+                if (pipeHandles.ContainsKey(hFile))
                 {
                     OnMessage(String.Format("!! WriteEx({0:X08})", hFile.ToInt32()));
                 }
@@ -537,7 +533,7 @@ namespace SwissArmyHook
             try
             {
                 // not supported yet
-                if (pipeHandleToName.ContainsKey(hFile))
+                if (pipeHandles.ContainsKey(hFile))
                 {
                     OnMessage(String.Format("!! GetResult({0:X08})", hFile.ToInt32()));
                 }
@@ -577,21 +573,21 @@ namespace SwissArmyHook
             try
             {
                 // if the completion port/key & overlapped are known
-                if (ioPortToHandles.ContainsKey(CompletionPort) && completionKeyToHandle.ContainsKey(lpCompletionKey) && overlappedToBuffer.ContainsKey(lpOverlapped))
+                if (ioPorts.ContainsKey(CompletionPort) && overlappedToRequestInfo.ContainsKey(lpOverlapped))
                 {
                     // if the operation is complete
                     if (result)
                     {
                         // get the buffer that was sent/recieved
-                        var lpBuffer = overlappedToBuffer[lpOverlapped];
+                        var info = overlappedToRequestInfo[lpOverlapped];
                         byte[] buffer = new byte[lpNumberOfBytes];
-                        Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytes);
+                        Marshal.Copy(info.Buffer, buffer, 0, (int)lpNumberOfBytes);
 
                         // log the buffer
-                        if (overlappedToDirection[lpOverlapped])
-                            OnDataSent(completionKeyToHandle[lpCompletionKey], buffer);
+                        if (info.Type == RequestType.Read)
+                            OnDataReceived(info.Handle, buffer);
                         else
-                            OnDataReceived(completionKeyToHandle[lpCompletionKey], buffer);
+                            OnDataSent(info.Handle, buffer);
 
                         OnMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
                     }
@@ -639,7 +635,7 @@ namespace SwissArmyHook
             try
             {
                 // not supported yet
-                if (ioPortToHandles.ContainsKey(CompletionPort))
+                if (ioPorts.ContainsKey(CompletionPort))
                 {
                     OnMessage(String.Format("!! GetStatusEx({0:X08})", CompletionPort.ToInt32()));
                 }
@@ -661,7 +657,7 @@ namespace SwissArmyHook
         private void OnDataSent(IntPtr handle, byte[] data)
         {
             // pretend IPC data was in a UDP/IP packet on loopback from port 1000 -> 2000
-            queue.Add(() => pcapWriters[handle].WriteIPPacketBlock(0x7F000001, 1000, 0x7F000001, 2000, data));
+            queue.Add(() => handleToPCapWriter[handle].WriteIPPacketBlock(0x7F000001, 1000, 0x7F000001, 2000, data));
         }
 
         /// <summary>
@@ -672,7 +668,7 @@ namespace SwissArmyHook
         private void OnDataReceived(IntPtr handle, byte[] data)
         {
             // pretend IPC data was in a UDP/IP packet on loopback from port 2000 -> 1000
-            queue.Add(() => pcapWriters[handle].WriteIPPacketBlock(0x7F000001, 2000, 0x7F000001, 1000, data));
+            queue.Add(() => handleToPCapWriter[handle].WriteIPPacketBlock(0x7F000001, 2000, 0x7F000001, 1000, data));
         }
 
         /// <summary>
@@ -687,13 +683,19 @@ namespace SwissArmyHook
         private ServerInterface server = null;
         private BlockingCollection<Action> queue = new BlockingCollection<Action>();
 
-        // TODO: clean-up unused or overcomplicated data structures
         // TODO: remove keys from data structures once they are complete... (right now it just grows forever)
-        private ConcurrentDictionary<IntPtr, string> pipeHandleToName = new ConcurrentDictionary<IntPtr, string>();
-        private ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>> ioPortToHandles = new ConcurrentDictionary<IntPtr, ConcurrentBag<IntPtr>>();
-        private ConcurrentDictionary<UIntPtr, IntPtr> completionKeyToHandle = new ConcurrentDictionary<UIntPtr, IntPtr>();
-        private ConcurrentDictionary<IntPtr, IntPtr> overlappedToBuffer = new ConcurrentDictionary<IntPtr, IntPtr>();
-        private ConcurrentDictionary<IntPtr, bool> overlappedToDirection = new ConcurrentDictionary<IntPtr, bool>(); // sending is true
-        private ConcurrentDictionary<IntPtr, PCapNGWriter> pcapWriters = new ConcurrentDictionary<IntPtr, PCapNGWriter>();
+        private ConcurrentDictionary<IntPtr, bool> pipeHandles = new ConcurrentDictionary<IntPtr, bool>();
+        private ConcurrentDictionary<IntPtr, bool> ioPorts = new ConcurrentDictionary<IntPtr, bool>();
+        private ConcurrentDictionary<IntPtr, RequestInfo> overlappedToRequestInfo = new ConcurrentDictionary<IntPtr, RequestInfo>();
+        private ConcurrentDictionary<IntPtr, PCapNGWriter> handleToPCapWriter = new ConcurrentDictionary<IntPtr, PCapNGWriter>();
+    }
+
+    public enum RequestType { Read, Write }
+
+    public class RequestInfo
+    {
+        public IntPtr Handle;
+        public IntPtr Buffer;
+        public RequestType Type;
     }
 }
