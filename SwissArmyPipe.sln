@@ -7,6 +7,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwissArmyPipe", "SwissArmyP
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwissArmyHook", "SwissArmyHook\SwissArmyHook.csproj", "{DC622124-5654-4491-B956-1BC6AF167F6C}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".NET Test", ".NET Test", "{DADCF0EE-85EC-402D-8C23-D36F7123F640}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNetSample", "Samples\DotNetSample\DotNetSample.csproj", "{32A7415C-7886-4C0C-9F0B-7DFBBFDF296C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,8 +25,15 @@ Global
 		{DC622124-5654-4491-B956-1BC6AF167F6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DC622124-5654-4491-B956-1BC6AF167F6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DC622124-5654-4491-B956-1BC6AF167F6C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{32A7415C-7886-4C0C-9F0B-7DFBBFDF296C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{32A7415C-7886-4C0C-9F0B-7DFBBFDF296C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{32A7415C-7886-4C0C-9F0B-7DFBBFDF296C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{32A7415C-7886-4C0C-9F0B-7DFBBFDF296C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{32A7415C-7886-4C0C-9F0B-7DFBBFDF296C} = {DADCF0EE-85EC-402D-8C23-D36F7123F640}
 	EndGlobalSection
 EndGlobal

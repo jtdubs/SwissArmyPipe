@@ -1,5 +1,4 @@
-﻿// TODO: flatten directory hierarchy by one level
-// TODO: add sample client/server apps for different modes of sync/async communication: sync, overlapped, io completion port, io completion routing
+﻿// TODO: add sample client/server apps for different modes of sync/async communication: sync, overlapped, io completion port, io completion routing
 // TODO: remove sap client & sap server once these are working
 // TODO: test hooking of different sample apps
 
@@ -182,7 +181,7 @@ namespace SwissArmyHook
                     pcapWriters[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
 
                     // report message back to SAP process
-                    // OnMessage(String.Format("Handle({1:X08}) = Client(\"{0}\")", lpFileName, handle.ToInt32()));
+                    OnMessage(String.Format("Handle({1:X08}) = Client(\"{0}\")", lpFileName, handle.ToInt32()));
                     OnMessage(String.Format("File '{0}' created for pipe '{1}'.", pcapFilename, lpFileName));
                 }
             }
@@ -234,7 +233,7 @@ namespace SwissArmyHook
                     pcapWriters[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
 
                     // report message back to SAP process
-                    // OnMessage(String.Format("Handle({1:X08}) = Server(\"{0}\")", lpName, handle.ToInt32()));
+                    OnMessage(String.Format("Handle({1:X08}) = Server(\"{0}\")", lpName, handle.ToInt32()));
                     OnMessage(String.Format("File '{0}' created for pipe '{1}'.", pcapFilename, lpName));
                 }
             }
@@ -276,9 +275,9 @@ namespace SwissArmyHook
                 if (result.ToInt32() != 0 && pipeHandleToName.ContainsKey(FileHandle))
                 {
                     // associate completion port/key with pipe handle, 
-                    ioPortToHandles.AddOrUpdate(result, new ConcurrentBag<IntPtr>(new IntPtr[] { FileHandle }), (n, b) => { b.Add(n); return b; });
-                    completionKeyToHandle.AddOrUpdate(CompletionKey, k => FileHandle, (k, h) => FileHandle);
-                    // OnMessage(String.Format("Port({0:X08}) = Handle({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
+                    ioPortToHandles[result] = new ConcurrentBag<IntPtr>(new IntPtr[] { FileHandle });
+                    completionKeyToHandle[CompletionKey] = FileHandle;
+                    OnMessage(String.Format("Port({0:X08}) = Handle({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
                 }
             }
             catch (Exception ex)
@@ -323,19 +322,31 @@ namespace SwissArmyHook
                     // if the read succeeded
                     if (result)
                     {
-                        // log the data that was read
-                        byte[] buffer = new byte[lpNumberOfBytesRead];
-                        Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesRead);
-                        OnDataReceived(hFile, buffer);
-                        // OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
+                        // if immediately completing async read (data was already available)
+                        if (lpOverlapped.ToInt32() != 0)
+                        {
+                            // associate the overlapped structure w/ the buffer
+                            overlappedToDirection[lpOverlapped] = false;
+                            overlappedToBuffer[lpOverlapped] = lpBuffer;
+                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
+                        }
+                        // if sync read
+                        else
+                        {
+                            // log the data that was read
+                            byte[] buffer = new byte[lpNumberOfBytesRead];
+                            Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesRead);
+                            OnDataReceived(hFile, buffer);
+                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
+                        }
                     }
                     // if the read is async (overlapped)
                     else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
                     {
                         // associate the overlapped structure w/ the buffer
-                        overlappedToBuffer.AddOrUpdate(lpOverlapped, lpBuffer, (a, b) => lpBuffer);
-                        overlappedToDirection.AddOrUpdate(lpOverlapped, false, (a, b) => false);
-                        // OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
+                        overlappedToDirection[lpOverlapped] = false;
+                        overlappedToBuffer[lpOverlapped] = lpBuffer;
+                        OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
                     }
                     // otherwise, something unexpected happened
                     else
@@ -346,7 +357,7 @@ namespace SwissArmyHook
             }
             catch (Exception ex)
             {
-                OnMessage(String.Format("ReadFile Error: {0}", ex.Message));
+                OnMessage(String.Format("ReadFile Error: {0}\n{1}", ex.Message, ex.StackTrace));
             }
 
             return result;
@@ -391,15 +402,15 @@ namespace SwissArmyHook
                         byte[] buffer = new byte[count];
                         Marshal.Copy(lpBuffer, buffer, 0, (int)count);
                         OnDataSent(hFile, buffer);
-                        // OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
+                        OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
                     }
                     // if the read is async (overlapped)
                     else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
                     {
                         // associate the overlapped structure w/ the buffer
-                        overlappedToBuffer.AddOrUpdate(lpOverlapped, lpBuffer, (a, b) => lpBuffer);
-                        overlappedToDirection.AddOrUpdate(lpOverlapped, true, (a, b) => true);
-                        // OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
+                        overlappedToDirection[lpOverlapped] = true;
+                        overlappedToBuffer[lpOverlapped] = lpBuffer;
+                        OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
                     }
                     // otherwise, something unexpected happened
                     else
@@ -582,7 +593,7 @@ namespace SwissArmyHook
                         else
                             OnDataReceived(completionKeyToHandle[lpCompletionKey], buffer);
 
-                        // OnMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
+                        OnMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
                     }
                     // otherwise, nothing to do
                     else
