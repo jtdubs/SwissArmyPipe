@@ -178,7 +178,7 @@ namespace SwissArmyHook
 
                     // map the handle to the original pipe name and create a pcap file
                     pipeHandles[handle] = true;
-                    handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
+                    handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Open(pcapFilename, FileMode.Create, FileAccess.Write, FileShare.None), System.Text.Encoding.UTF8));
 
                     // report message back to SAP process
                     OnMessage(String.Format("Handle({1:X08}) = Client(\"{0}\")", lpFileName, handle.ToInt32()));
@@ -230,7 +230,7 @@ namespace SwissArmyHook
 
                     // map the handle to the original pipe name and create a pcap file
                     pipeHandles[handle] = true;
-                    handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Create(pcapFilename)));
+                    handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Open(pcapFilename, FileMode.Create, FileAccess.Write, FileShare.None), System.Text.Encoding.UTF8));
 
                     // report message back to SAP process
                     OnMessage(String.Format("Handle({1:X08}) = Server(\"{0}\")", lpName, handle.ToInt32()));

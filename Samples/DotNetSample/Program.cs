@@ -13,8 +13,11 @@ namespace DotNetSample
     {
         static void Main(string[] args)
         {
+            Thread.Sleep(2000);
             TestAsyncMessages();
+            Thread.Sleep(2000);
             TestSyncMessages();
+            Thread.Sleep(2000);
         }
 
         private static void TestAsyncMessages()
@@ -67,7 +70,7 @@ namespace DotNetSample
                 done.WaitOne();
             }
 
-            Thread.Sleep(2000);
+            Console.WriteLine("Done.");
         }
 
         private static void TestSyncMessages()
@@ -120,7 +123,7 @@ namespace DotNetSample
                 done.WaitOne();
             }
 
-            Thread.Sleep(2000);
+            Console.WriteLine("Done.");
         }
     }
 }
