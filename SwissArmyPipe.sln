@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
 VisualStudioVersion = 14.0.24720.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwissArmyPipe", "SwissArmyPipe.csproj", "{E218FEB2-3AD8-4B71-A60F-AED8DFCE9A71}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwissArmyPipe", "SwissArmyPipe\SwissArmyPipe.csproj", "{E218FEB2-3AD8-4B71-A60F-AED8DFCE9A71}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwissArmyHook", "..\SwissArmyHook\SwissArmyHook.csproj", "{DC622124-5654-4491-B956-1BC6AF167F6C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SwissArmyHook", "SwissArmyHook\SwissArmyHook.csproj", "{DC622124-5654-4491-B956-1BC6AF167F6C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
