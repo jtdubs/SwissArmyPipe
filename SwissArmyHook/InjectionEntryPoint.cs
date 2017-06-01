@@ -290,10 +290,10 @@ namespace SwissArmyHook
 
         #region ReadFile
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
-        private static extern bool ReadFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
+        private static extern bool ReadFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, ref uint lpNumberOfBytesRead, IntPtr lpOverlapped);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
-        private delegate bool ReadFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped);
+        private delegate bool ReadFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, ref uint lpNumberOfBytesRead, IntPtr lpOverlapped);
 
         /// <summary>
         /// ReadFile is used to read from a named pipe
@@ -308,28 +308,49 @@ namespace SwissArmyHook
         /// <param name="lpNumberOfBytesRead"></param>
         /// <param name="lpOverlapped"></param>
         /// <returns></returns>
-        private bool ReadFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, out uint lpNumberOfBytesRead, IntPtr lpOverlapped)
+        private bool ReadFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, ref uint lpNumberOfBytesRead, IntPtr lpOverlapped)
         {
-            // call the real ReadFile function
-            var result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, out lpNumberOfBytesRead, lpOverlapped);
+            bool result = false;
 
             try
             {
-                // if the read was for a known pipe
+                // if this is a named pipe read
                 if (pipeHandles.ContainsKey(hFile))
                 {
-                    // if the read succeeded
-                    if (result)
+                    // if this is an async (overlapped) call
+                    if (lpOverlapped.ToInt32() != 0)
                     {
-                        // if immediately completing async read (data was already available)
-                        if (lpOverlapped.ToInt32() != 0)
+                        // associate the overlapped structure w/ the request metadata
+                        overlappedToRequestInfo[lpOverlapped] = new RequestInfo() { Handle = hFile, Buffer = lpBuffer, Type = RequestType.Read };
+
+                        // call the real ReadFile function
+                        result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, ref lpNumberOfBytesRead, lpOverlapped);
+
+                        // if the call finished immediately
+                        if (result)
                         {
-                            // associate the overlapped structure w/ the request metadata
-                            overlappedToRequestInfo[lpOverlapped] = new RequestInfo() { Handle = hFile, Buffer = lpBuffer, Type = RequestType.Read };
-                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
+                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Complete Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
                         }
-                        // if sync read
+                        // if the read is async (overlapped)
+                        else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
+                        {
+                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Pending Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
+                        }
+                        // otherwise, something unexpected happened
                         else
+                        {
+                            OnMessage(String.Format("Read(Handle({0:X08}), @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToRead));
+                        }
+
+                        return result;
+                    }
+                    // if this is a sync call
+                    else
+                    {
+                        // call the real ReadFile function
+                        result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, ref lpNumberOfBytesRead, lpOverlapped);
+
+                        if (result)
                         {
                             // log the data that was read
                             byte[] buffer = new byte[lpNumberOfBytesRead];
@@ -337,19 +358,19 @@ namespace SwissArmyHook
                             OnDataReceived(hFile, buffer);
                             OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
                         }
+                        else
+                        {
+                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToRead));
+                        }
+
+                        return result;
                     }
-                    // if the read is async (overlapped)
-                    else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
-                    {
-                        // associate the overlapped structure w/ the request metadata
-                        overlappedToRequestInfo[lpOverlapped] = new RequestInfo() { Handle = hFile, Buffer = lpBuffer, Type = RequestType.Read };
-                        OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
-                    }
-                    // otherwise, something unexpected happened
-                    else
-                    {
-                        OnMessage(String.Format("Read(Handle({0:X08}), @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToRead));
-                    }
+                }
+                // if this is NOT for a named pipe
+                else
+                {
+                    // call the real ReadFile function
+                    result = ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, ref lpNumberOfBytesRead, lpOverlapped);
                 }
             }
             catch (Exception ex)
@@ -363,10 +384,10 @@ namespace SwissArmyHook
 
         #region WriteFile
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
-        private static extern bool WriteFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpNumberOfBytesWritten, IntPtr lpOverlapped);
+        private static extern bool WriteFile(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, ref uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
-        private delegate bool WriteFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpNumberOfBytesWritten, IntPtr lpOverlapped);
+        private delegate bool WriteFile_Delegate(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, ref uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
 
         /// <summary>
         /// WriteFile is used to write to a named pipe
@@ -381,43 +402,74 @@ namespace SwissArmyHook
         /// <param name="lpNumberOfBytesWritten"></param>
         /// <param name="lpOverlapped"></param>
         /// <returns></returns>
-        private bool WriteFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, IntPtr lpNumberOfBytesWritten, IntPtr lpOverlapped)
+        private bool WriteFile_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToWrite, ref uint lpNumberOfBytesWritten, IntPtr lpOverlapped)
         {
-            // call the real WriteFile function
-            var result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped);
+            bool result = false;
 
             try
             {
-                // if the write was for a pipe
+                // if this is a named pipe write
                 if (pipeHandles.ContainsKey(hFile))
                 {
-                    // if the write succeeded
-                    if (result)
+                    // if this is an async (overlapped) call
+                    if (lpOverlapped.ToInt32() != 0)
                     {
-                        // log the data that was written
-                        int count = lpNumberOfBytesWritten == IntPtr.Zero ? (int)nNumberOfBytesToWrite : Marshal.ReadInt32(lpNumberOfBytesWritten); // uint -> int !!
-                        byte[] buffer = new byte[count];
-                        Marshal.Copy(lpBuffer, buffer, 0, (int)count);
-                        OnDataSent(hFile, buffer);
-                        OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
-                    }
-                    // if the read is async (overlapped)
-                    else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
-                    {
-                        // associate the overlapped structure w/ the request meatadata
+                        // associate the overlapped structure w/ the request metadata
                         overlappedToRequestInfo[lpOverlapped] = new RequestInfo() { Handle = hFile, Buffer = lpBuffer, Type = RequestType.Write };
-                        OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
+
+                        // call the real WriteFile function
+                        result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, ref lpNumberOfBytesWritten, lpOverlapped);
+
+                        // if the call finished immediately
+                        if (result)
+                        {
+                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Complete Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
+                        }
+                        // if the write is async (overlapped)
+                        else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
+                        {
+                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Pending Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
+                        }
+                        // otherwise, something unexpected happened
+                        else
+                        {
+                            OnMessage(String.Format("Write(Handle({0:X08}), @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToWrite));
+                        }
+
+                        return result;
                     }
-                    // otherwise, something unexpected happened
+                    // if this is a sync call
                     else
                     {
-                        OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToWrite));
+                        // call the real WriteFile function
+                        result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, ref lpNumberOfBytesWritten, lpOverlapped);
+
+                        if (result)
+                        {
+                            // log the data that was written
+                            byte[] buffer = new byte[lpNumberOfBytesWritten];
+                            Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesWritten);
+                            OnDataReceived(hFile, buffer);
+                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
+                        }
+                        else
+                        {
+                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToWrite));
+                        }
+
+                        return result;
                     }
+                }
+                // if this is NOT for a named pipe
+                else
+                {
+                    // call the real WriteFile function
+                    result = WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, ref lpNumberOfBytesWritten, lpOverlapped);
                 }
             }
             catch (Exception ex)
             {
-                OnMessage(String.Format("WriteFile error: 0}", ex.Message));
+                OnMessage(String.Format("WriteFile Error: {0}\n{1}", ex.Message, ex.StackTrace));
             }
 
             return result;
