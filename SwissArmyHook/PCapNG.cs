@@ -21,6 +21,8 @@ namespace SwissArmyHook
             // automatically write out mandatory headers
             WriteSectionHeaderBlock();
             WriteInterfaceDescriptorBlock();
+
+            // alert that header is written
             headerWritten.Set();
         }
 
@@ -73,6 +75,7 @@ namespace SwissArmyHook
         /// <param name="packet"></param>
         public void WriteIPPacketBlock(UInt32 srcIP, UInt16 srcPort, UInt32 dstIP, UInt16 dstPort, byte[] packet)
         {
+            // ensure header is written first, for multi-threaded use
             headerWritten.WaitOne();
 
             // calculate packet time and required lengths
@@ -82,53 +85,56 @@ namespace SwissArmyHook
             UInt16 udpLen = (UInt16)(8 + packet.Length);
             UInt16 tcpLen = (UInt16)(20 + udpLen);
             UInt16 totalLen = (UInt16)(tcpLen + padding);
+            
+            lock (writer)
+            {
+                // pcapng block header
+                writer.Write((UInt32)0x00000006);          // block type
+                writer.Write((UInt32)(32 + totalLen));     // block length
+                writer.Write((UInt32)0);                   // interface ID
+                writer.Write((UInt32)(time >> 32));        // timestamp (high)
+                writer.Write((UInt32)(time & 0xFFFFFFFF)); // timestamp (low)
+                writer.Write((UInt32)tcpLen);              // captured len
+                writer.Write((UInt32)tcpLen);              // packet len
 
-            // pcapng block header
-            writer.Write((UInt32)0x00000006);          // block type
-            writer.Write((UInt32)(32 + totalLen));     // block length
-            writer.Write((UInt32)0);                   // interface ID
-            writer.Write((UInt32)(time >> 32));        // timestamp (high)
-            writer.Write((UInt32)(time & 0xFFFFFFFF)); // timestamp (low)
-            writer.Write((UInt32)tcpLen);              // captured len
-            writer.Write((UInt32)tcpLen);              // packet len
+                // IPV4 header
+                writer.Write((byte)0x45); // basic IP header
+                writer.Write((byte)0x00);
+                writer.Write((byte)(tcpLen >> 8));
+                writer.Write((byte)(tcpLen & 0xFF));
+                writer.Write((UInt32)0x00000000);
+                writer.Write((byte)0x80); // TTL
+                writer.Write((byte)0x11); // UDP
+                UInt16 checksum = (UInt16)~(0x4500 + tcpLen + 0x8011 + (srcIP >> 16) + (srcIP & 0xFFFF) + (dstIP >> 16) + (dstIP & 0xFFFF));
+                writer.Write((byte)(checksum >> 8));
+                writer.Write((byte)(checksum & 0xFF));
+                writer.Write((byte)(srcIP >> 24));
+                writer.Write((byte)((srcIP >> 16) & 0xFF));
+                writer.Write((byte)((srcIP >> 8) & 0xFF));
+                writer.Write((byte)(srcIP & 0xFF));
+                writer.Write((byte)(dstIP >> 24));
+                writer.Write((byte)((dstIP >> 16) & 0xFF));
+                writer.Write((byte)((dstIP >> 8) & 0xFF));
+                writer.Write((byte)(dstIP & 0xFF));
 
-            // IPV4 header
-            writer.Write((byte)0x45); // basic IP header
-            writer.Write((byte)0x00);
-            writer.Write((byte)(tcpLen >> 8));
-            writer.Write((byte)(tcpLen & 0xFF));
-            writer.Write((UInt32)0x00000000);
-            writer.Write((byte)0x80); // TTL
-            writer.Write((byte)0x11); // UDP
-            UInt16 checksum = (UInt16)~(0x4500 + tcpLen + 0x8011 + (srcIP >> 16) + (srcIP & 0xFFFF) + (dstIP >> 16) + (dstIP & 0xFFFF));
-            writer.Write((byte)(checksum >> 8));
-            writer.Write((byte)(checksum & 0xFF));
-            writer.Write((byte)(srcIP >> 24));
-            writer.Write((byte)((srcIP >> 16) & 0xFF));
-            writer.Write((byte)((srcIP >> 8) & 0xFF));
-            writer.Write((byte)(srcIP & 0xFF));
-            writer.Write((byte)(dstIP >> 24));
-            writer.Write((byte)((dstIP >> 16) & 0xFF));
-            writer.Write((byte)((dstIP >> 8) & 0xFF));
-            writer.Write((byte)(dstIP & 0xFF));
-                
-            // UDP header
-            writer.Write((byte)(srcPort >> 8));
-            writer.Write((byte)(srcPort & 0xFF));
-            writer.Write((byte)(dstPort >> 8));
-            writer.Write((byte)(dstPort & 0xFF));
-            writer.Write((byte)(udpLen >> 8));
-            writer.Write((byte)(udpLen & 0xFF));
-            writer.Write((UInt16)0x0000);
+                // UDP header
+                writer.Write((byte)(srcPort >> 8));
+                writer.Write((byte)(srcPort & 0xFF));
+                writer.Write((byte)(dstPort >> 8));
+                writer.Write((byte)(dstPort & 0xFF));
+                writer.Write((byte)(udpLen >> 8));
+                writer.Write((byte)(udpLen & 0xFF));
+                writer.Write((UInt16)0x0000);
 
-            // payload
-            writer.Write(packet);
-            writer.Write(new byte[] { 0, 0, 0, 0 }, 0, padding);
+                // payload
+                writer.Write(packet);
+                writer.Write(new byte[] { 0, 0, 0, 0 }, 0, padding);
 
-            // pcapng block footer
-            writer.Write((UInt32)(32 + totalLen));     // block length
+                // pcapng block footer
+                writer.Write((UInt32)(32 + totalLen));     // block length
 
-            writer.Flush();
+                writer.Flush();
+            }
         }
         
         private BinaryWriter writer;
