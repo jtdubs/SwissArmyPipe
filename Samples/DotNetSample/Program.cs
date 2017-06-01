@@ -27,6 +27,7 @@ namespace DotNetSample
                     writer.AutoFlush = true;
                     for (int i = 0; i < 10; i++)
                     {
+                        Thread.Sleep(1000);
                         writer.WriteLine("sample request");
                         Thread.Sleep(1000);
                         reader.ReadLine();
@@ -42,6 +43,7 @@ namespace DotNetSample
                     writer.AutoFlush = true;
                     for (int i = 0; i < 10; i++)
                     {
+                        Thread.Sleep(1000);
                         reader.ReadLine();
                         Thread.Sleep(1000);
                         writer.WriteLine("sample response");
@@ -52,7 +54,7 @@ namespace DotNetSample
                 done.WaitOne();
                 done.WaitOne();
 
-                Thread.Sleep(1000);
+                Thread.Sleep(2000);
             }
         }
     }

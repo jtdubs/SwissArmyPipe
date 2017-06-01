@@ -15,7 +15,7 @@ namespace SwissArmyHook
     /// <summary>
     /// The hook that is injectioned into the application
     /// 
-    /// TODO: use WaitNamedPipe and ConnectNamedPipe to associate handles w/ PIDs.  use PIDs as UDP ports.
+    /// TODO: use WaitNamedPipe and ConnectNamedPipe to associate handles w/ PIDs.  use PIDs as UDP ports.  disambiguate client/server w/ high bit of port number.
     /// </summary>
     public class InjectionEntryPoint : IEntryPoint
     {
@@ -167,7 +167,7 @@ namespace SwissArmyHook
         {
             // call the real CreateFile function
             var handle = CreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
-          
+
             try
             {
                 // if a pipe was successfully opened
@@ -446,7 +446,6 @@ namespace SwissArmyHook
         /// <returns></returns>
         private bool ReadFileEx_Hook(IntPtr hFile, IntPtr lpBuffer, uint nNumberOfBytesToRead, IntPtr lpOverlapped, IOCompletionCallback lpCompletionRoutine)
         {
-            
             var result = ReadFileEx(hFile, lpBuffer, nNumberOfBytesToRead, lpOverlapped, lpCompletionRoutine);
 
             try
