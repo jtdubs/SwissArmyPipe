@@ -1,6 +1,4 @@
-﻿// TODO: add sample client/server apps for different modes of sync/async communication: sync, overlapped, io completion port, io completion routing
-// TODO: remove sap client & sap server once these are working
-// TODO: test hooking of different sample apps
+﻿// TODO: add sample client/server apps: GetOverlappedResult, ReadFileEx, WriteFileEx, GetQueuedCompletionStatusEx
 
 using System;
 using EasyHook;
