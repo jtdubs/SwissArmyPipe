@@ -753,33 +753,47 @@ namespace SwissArmyHook
         {
             bool ignore;
 
-            // if a pipe was closed
-            if (pipeHandles.ContainsKey(hObject))
+            try
             {
-                // after all queued operations are complete (in case some logging is in-flight)
-                queue.Add(() =>
+                // if a pipe was closed
+                if (pipeHandles.ContainsKey(hObject))
                 {
-                    // remove the pcapng writer
-                    PCapNGWriter oldWriter;
-                    handleToPCapWriter.TryRemove(hObject, out oldWriter);
+                    OnDebugMessage(String.Format("CloseHandle(Handle({0:X08}))", hObject.ToInt32()));
 
-                    // remove any overlapped structures that reference this handle
-                    foreach (var deadOverlapped in overlappedToRequestInfo.Where(kv => kv.Value.Handle.ToInt32() == hObject.ToInt32()).Select(kv => kv.Key).ToList())
+                    // after all queued operations are complete (in case some logging is in-flight)
+                    queue.Add(() =>
                     {
-                        RequestInfo oldRequestInfo;
-                        overlappedToRequestInfo.TryRemove(deadOverlapped, out oldRequestInfo);
-                    }
+                        OnDebugMessage(String.Format("DeferredCloseHandle(Handle({0:X08}))", hObject.ToInt32()));
 
-                    // remove the handle itself from the pipe list
-                    pipeHandles.TryRemove(hObject, out ignore);
-                });
+                        // remove the pcapng writer
+                        PCapNGWriter oldWriter;
+                        handleToPCapWriter.TryRemove(hObject, out oldWriter);
+
+                        // remove any overlapped structures that reference this handle
+                        foreach (var deadOverlapped in overlappedToRequestInfo.Where(kv => kv.Value.Handle.ToInt32() == hObject.ToInt32()).Select(kv => kv.Key).ToList())
+                        {
+                            OnDebugMessage(String.Format("DeferredCloseHandle(Handle({0:X08}), Overlapped({1:X08}))", hObject.ToInt32(), deadOverlapped.ToInt32()));
+
+                            RequestInfo oldRequestInfo;
+                            overlappedToRequestInfo.TryRemove(deadOverlapped, out oldRequestInfo);
+                        }
+
+                        // remove the handle itself from the pipe list
+                        pipeHandles.TryRemove(hObject, out ignore);
+                    });
+                }
+
+                // if an io port was closed
+                if (ioPorts.ContainsKey(hObject))
+                {
+                    OnDebugMessage(String.Format("CloseHandle(IO({0:X08}))", hObject.ToInt32()));
+
+                    // remove the handle from the io port lits
+                    ioPorts.TryRemove(hObject, out ignore);
+                }
             }
-
-            // if an io port was closed
-            if (ioPorts.ContainsKey(hObject))
+            catch
             {
-                // remove the handle from the io port lits
-                ioPorts.TryRemove(hObject, out ignore);
             }
 
             // call the real CloseHandle function
