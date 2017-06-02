@@ -1,4 +1,4 @@
-﻿// TODO: add sample client/server apps: GetOverlappedResult, ReadFileEx, WriteFileEx, GetQueuedCompletionStatusEx
+﻿// TODO: add sample client/server apps: ReadFileEx/WriteFileEx, GetQueuedCompletionStatusEx
 
 using System;
 using EasyHook;
@@ -565,10 +565,6 @@ namespace SwissArmyHook
 
         /// <summary>
         /// GetOverlappedResult is used to get the result of an OVERLAPPED async operation
-        /// 
-        /// This is not currently supported as .NET code uses IO completion ports instead.
-        /// 
-        /// TODO: implement this
         /// </summary>
         /// <param name="hFile"></param>
         /// <param name="lpOverlapped"></param>
@@ -577,14 +573,34 @@ namespace SwissArmyHook
         /// <returns></returns>
         private bool GetOverlappedResult_Hook(IntPtr hFile, IntPtr lpOverlapped, out uint lpNumberOfBytesTransferred, bool bWait)
         {
+            // call the real GetOverlappedResult method
             var result = GetOverlappedResult(hFile, lpOverlapped, out lpNumberOfBytesTransferred, bWait);
 
             try
             {
-                // not supported yet
+                // if this is for a named pipe operation
                 if (pipeHandles.ContainsKey(hFile))
                 {
-                    OnMessage(String.Format("!! GetResult({0:X08})", hFile.ToInt32()));
+                    // if the operation is now complete
+                    if (result)
+                    {
+                        // get the buffer that was sent/recieved
+                        var info = overlappedToRequestInfo[lpOverlapped];
+                        byte[] buffer = new byte[lpNumberOfBytesTransferred];
+                        Marshal.Copy(info.Buffer, buffer, 0, (int)lpNumberOfBytesTransferred);
+
+                        // log the buffer
+                        if (info.Type == RequestType.Read)
+                            OnDataReceived(info.Handle, buffer);
+                        else
+                            OnDataSent(info.Handle, buffer);
+
+                        OnMessage(String.Format("GetResult(Handle({0:X08}), Overlapped({1:X08})) -> [{2}]", hFile.ToInt32(), lpOverlapped.ToInt32(), BitConverter.ToString(buffer).Replace("-", "")));
+                    }
+                    else
+                    {
+                        OnMessage(String.Format("GetResult(Handle({0:X08})) -> False", hFile.ToInt32()));
+                    }
                 }
             }
             catch (Exception ex)
