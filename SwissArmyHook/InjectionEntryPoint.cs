@@ -1,6 +1,7 @@
 ﻿// TODO: add sample client/server apps: ReadFileEx/WriteFileEx, GetQueuedCompletionStatusEx
 
 using System;
+using System.Linq;
 using EasyHook;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -88,7 +89,12 @@ namespace SwissArmyHook
                LocalHook.GetProcAddress("kernel32.dll", "WriteFileEx"),
                new WriteFileEx_Delegate(WriteFileEx_Hook),
                this);
-            
+
+            var closeHandleHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "CloseHandle"),
+               new CloseHandle_Delegate(CloseHandle_Hook),
+               this);
+
             // don't run hooks on this thread, otherwise we'll recurse to our doom! 
             createFileHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             createNamedPipeHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
@@ -100,6 +106,7 @@ namespace SwissArmyHook
             writeFileHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             readFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             writeFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            closeHandleHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
 
             // wake up the hooked process
             RemoteHooking.WakeUpProcess();
@@ -136,6 +143,7 @@ namespace SwissArmyHook
             writeFileHook.Dispose();
             readFileExHook.Dispose();
             writeFileExHook.Dispose();
+            closeHandleHook.Dispose();
 
             // final clean-up
             LocalHook.Release();
@@ -578,24 +586,32 @@ namespace SwissArmyHook
 
             try
             {
-                // if this is for a named pipe operation
-                if (pipeHandles.ContainsKey(hFile))
+                // if this is a known overlapped operation for a named pipe
+                if (pipeHandles.ContainsKey(hFile) && overlappedToRequestInfo.ContainsKey(lpOverlapped))
                 {
                     // if the operation is now complete
                     if (result)
                     {
                         // get the buffer that was sent/recieved
-                        var info = overlappedToRequestInfo[lpOverlapped];
-                        byte[] buffer = new byte[lpNumberOfBytesTransferred];
-                        Marshal.Copy(info.Buffer, buffer, 0, (int)lpNumberOfBytesTransferred);
+                        RequestInfo info;
+                        if (overlappedToRequestInfo.TryRemove(lpOverlapped, out info))
+                        {
 
-                        // log the buffer
-                        if (info.Type == RequestType.Read)
-                            OnDataReceived(info.Handle, buffer);
+                            byte[] buffer = new byte[lpNumberOfBytesTransferred];
+                            Marshal.Copy(info.Buffer, buffer, 0, (int)lpNumberOfBytesTransferred);
+
+                            // log the buffer
+                            if (info.Type == RequestType.Read)
+                                OnDataReceived(info.Handle, buffer);
+                            else
+                                OnDataSent(info.Handle, buffer);
+
+                            OnDebugMessage(String.Format("GetResult(Handle({0:X08}), Overlapped({1:X08})) -> [{2}]", hFile.ToInt32(), lpOverlapped.ToInt32(), BitConverter.ToString(buffer).Replace("-", "")));
+                        }
                         else
-                            OnDataSent(info.Handle, buffer);
-
-                        OnDebugMessage(String.Format("GetResult(Handle({0:X08}), Overlapped({1:X08})) -> [{2}]", hFile.ToInt32(), lpOverlapped.ToInt32(), BitConverter.ToString(buffer).Replace("-", "")));
+                        {
+                            OnMessage(String.Format("GetResult(Handle({0:X08})) -> RequestInfo missing!", hFile.ToInt32()));
+                        }
                     }
                     else
                     {
@@ -644,17 +660,24 @@ namespace SwissArmyHook
                     if (result)
                     {
                         // get the buffer that was sent/recieved
-                        var info = overlappedToRequestInfo[lpOverlapped];
-                        byte[] buffer = new byte[lpNumberOfBytes];
-                        Marshal.Copy(info.Buffer, buffer, 0, (int)lpNumberOfBytes);
+                        RequestInfo info;
+                        if (overlappedToRequestInfo.TryRemove(lpOverlapped, out info))
+                        {
+                            byte[] buffer = new byte[lpNumberOfBytes];
+                            Marshal.Copy(info.Buffer, buffer, 0, (int)lpNumberOfBytes);
 
-                        // log the buffer
-                        if (info.Type == RequestType.Read)
-                            OnDataReceived(info.Handle, buffer);
+                            // log the buffer
+                            if (info.Type == RequestType.Read)
+                                OnDataReceived(info.Handle, buffer);
+                            else
+                                OnDataSent(info.Handle, buffer);
+
+                            OnDebugMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
+                        }
                         else
-                            OnDataSent(info.Handle, buffer);
-
-                        OnDebugMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
+                        {
+                            OnMessage(String.Format("GetStatus(IO({0:X08})) = RequstInfo missing!", CompletionPort.ToInt32()));
+                        }
                     }
                     // otherwise, nothing to do
                     else
@@ -714,6 +737,56 @@ namespace SwissArmyHook
         }
         #endregion
 
+        #region CloseHandle
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool CloseHandle_Delegate(IntPtr hObject);
+
+        /// <summary>
+        /// CloseHandle is used to close handles
+        /// </summary>
+        /// <param name="hObject"></param>
+        /// <returns></returns>
+        private bool CloseHandle_Hook(IntPtr hObject)
+        {
+            bool ignore;
+
+            // if a pipe was closed
+            if (pipeHandles.ContainsKey(hObject))
+            {
+                // after all queued operations are complete (in case some logging is in-flight)
+                queue.Add(() =>
+                {
+                    // remove the pcapng writer
+                    PCapNGWriter oldWriter;
+                    handleToPCapWriter.TryRemove(hObject, out oldWriter);
+
+                    // remove any overlapped structures that reference this handle
+                    foreach (var deadOverlapped in overlappedToRequestInfo.Where(kv => kv.Value.Handle.ToInt32() == hObject.ToInt32()).Select(kv => kv.Key).ToList())
+                    {
+                        RequestInfo oldRequestInfo;
+                        overlappedToRequestInfo.TryRemove(deadOverlapped, out oldRequestInfo);
+                    }
+
+                    // remove the handle itself from the pipe list
+                    pipeHandles.TryRemove(hObject, out ignore);
+                });
+            }
+
+            // if an io port was closed
+            if (ioPorts.ContainsKey(hObject))
+            {
+                // remove the handle from the io port lits
+                ioPorts.TryRemove(hObject, out ignore);
+            }
+
+            // call the real CloseHandle function
+            return CloseHandle(hObject);
+        }
+        #endregion
+
         /// <summary>
         /// Log transmitted pipe data
         /// </summary>
@@ -759,7 +832,6 @@ namespace SwissArmyHook
         private ServerInterface server = null;
         private BlockingCollection<Action> queue = new BlockingCollection<Action>();
 
-        // TODO: remove keys from data structures once they are complete... (right now it just grows forever)
         private ConcurrentDictionary<IntPtr, bool> pipeHandles = new ConcurrentDictionary<IntPtr, bool>();
         private ConcurrentDictionary<IntPtr, bool> ioPorts = new ConcurrentDictionary<IntPtr, bool>();
         private ConcurrentDictionary<IntPtr, RequestInfo> overlappedToRequestInfo = new ConcurrentDictionary<IntPtr, RequestInfo>();
