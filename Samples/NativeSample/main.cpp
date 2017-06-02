@@ -14,9 +14,9 @@ HANDLE semaphore, server, client;
 
 int main()
 {
-	/*Sleep(2000);
+	Sleep(2000);
 	TestSyncMessage();
-	Sleep(2000);*/
+	Sleep(2000);
 	TestGetOverlappedResult();
 	Sleep(2000);
 
