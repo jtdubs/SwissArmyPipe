@@ -45,7 +45,7 @@ namespace SwissArmyHook
                new CreateFile_Delegate(CreateFile_Hook),
                this);
 
-            var createNamedPipeHook = EasyHook.LocalHook.Create(
+            var createNamedPipeHook = LocalHook.Create(
                LocalHook.GetProcAddress("kernel32.dll", "CreateNamedPipeW"),
                new CreateNamedPipe_Delegate(CreateNamedPipe_Hook),
                this);
