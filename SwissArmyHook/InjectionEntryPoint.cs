@@ -23,7 +23,7 @@ namespace SwissArmyHook
         /// </summary>
         /// <param name="context"></param>
         /// <param name="channelName"></param>
-        public InjectionEntryPoint(RemoteHooking.IContext context, string channelName)
+        public InjectionEntryPoint(RemoteHooking.IContext context, string channelName, string cwd)
         {
             // create RPC interface back to SAP process
             server = RemoteHooking.IpcConnectClient<ServerInterface>(channelName);
@@ -34,9 +34,10 @@ namespace SwissArmyHook
         /// </summary>
         /// <param name="context"></param>
         /// <param name="channelName"></param>
-        public void Run(RemoteHooking.IContext context, string channelName)
+        public void Run(RemoteHooking.IContext context, string channelName, string cwd)
         {
             // server.ReportMessage(String.Format("Installing into {0}...", RemoteHooking.GetCurrentProcessId()));
+            this.cwd = cwd;
 
             // hook interesting functions
 
@@ -180,7 +181,7 @@ namespace SwissArmyHook
                 if (handle.ToInt32() != -1 && lpFileName.StartsWith(@"\\.\pipe\", StringComparison.InvariantCultureIgnoreCase))
                 {
                     // pcap file name
-                    string pcapFilename = String.Format("client-{0}.pcapng", Path.GetFileName(lpFileName));
+                    string pcapFilename = Path.Combine(cwd, String.Format("client-{0}.pcapng", Path.GetFileName(lpFileName)));
 
                     // map the handle to the original pipe name and create a pcap file
                     pipeHandles[handle] = true;
@@ -232,7 +233,7 @@ namespace SwissArmyHook
                 if (handle.ToInt32() != -1)
                 {
                     // pcap file name
-                    string pcapFilename = String.Format("server-{0}.pcapng", Path.GetFileName(lpName));
+                    string pcapFilename = Path.Combine(cwd, String.Format("server-{0}.pcapng", Path.GetFileName(lpName)));
 
                     // map the handle to the original pipe name and create a pcap file
                     pipeHandles[handle] = true;
@@ -845,6 +846,7 @@ namespace SwissArmyHook
 
         private ServerInterface server = null;
         private BlockingCollection<Action> queue = new BlockingCollection<Action>();
+        private string cwd;
 
         private ConcurrentDictionary<IntPtr, bool> pipeHandles = new ConcurrentDictionary<IntPtr, bool>();
         private ConcurrentDictionary<IntPtr, bool> ioPorts = new ConcurrentDictionary<IntPtr, bool>();

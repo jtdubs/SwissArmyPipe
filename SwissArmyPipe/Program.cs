@@ -254,7 +254,7 @@ run [cmd] [args*] - hook new process",
             {
                 // create the hooked process
                 var hookDLL = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "SwissArmyHook.dll");
-                RemoteHooking.CreateAndInject(app, string.Join(" ", args), 0, InjectionOptions.DoNotRequireStrongName, hookDLL, hookDLL, out pid, channelName);
+                RemoteHooking.CreateAndInject(app, string.Join(" ", args), 0, InjectionOptions.DoNotRequireStrongName, hookDLL, hookDLL, out pid, channelName, Directory.GetCurrentDirectory());
             }
             catch (Exception ex)
             {
@@ -282,7 +282,7 @@ run [cmd] [args*] - hook new process",
             {
                 // hook existing process
                 var hookDLL = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "SwissArmyHook.dll");
-                RemoteHooking.Inject(pid, InjectionOptions.DoNotRequireStrongName, hookDLL, hookDLL, channelName);
+                RemoteHooking.Inject(pid, InjectionOptions.DoNotRequireStrongName, hookDLL, hookDLL, channelName, Directory.GetCurrentDirectory());
             }
             catch (Exception ex)
             {
