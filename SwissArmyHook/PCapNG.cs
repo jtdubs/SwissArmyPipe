@@ -75,16 +75,35 @@ namespace SwissArmyHook
         /// <param name="packet"></param>
         public void WriteIPPacketBlock(UInt32 srcIP, UInt16 srcPort, UInt32 dstIP, UInt16 dstPort, byte[] packet)
         {
+            DateTime time = DateTime.Now;
+
+            // split big packets based on UDP MTU
+            for (int i = 0; i < packet.Length; i += 65507)
+            {
+                WriteIPPacketBlock(srcIP, srcPort, dstIP, dstPort, packet, time, i, Math.Min(65507, packet.Length - i));
+            }
+        }
+
+        /// <summary>
+        /// Write simulated "UDP/IP" packet
+        /// </summary>
+        /// <param name="srcIP"></param>
+        /// <param name="srcPort"></param>
+        /// <param name="dstIP"></param>
+        /// <param name="dstPort"></param>
+        /// <param name="packet"></param>
+        public void WriteIPPacketBlock(UInt32 srcIP, UInt16 srcPort, UInt32 dstIP, UInt16 dstPort, byte[] packet, DateTime packetTime, int offset, int length)
+        {
             // ensure header is written first, for multi-threaded use
             headerWritten.WaitOne();
 
             // calculate packet time and required lengths
-            ulong time = (ulong)((DateTime.Now - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds * 1000);
-            int padding = (4 - ((packet.Length) % 4)) % 4;
+            ulong time = (ulong)((packetTime - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds * 1000);
+            int padding = (4 - (length % 4)) % 4;
 
-            UInt16 udpLen = (UInt16)(8 + packet.Length);
-            UInt16 tcpLen = (UInt16)(20 + udpLen);
-            UInt16 totalLen = (UInt16)(tcpLen + padding);
+            uint udpLen = (uint)(8 + length);
+            uint tcpLen = (uint)(20 + udpLen);
+            uint totalLen = (uint)(tcpLen + padding);
             
             lock (writer)
             {
@@ -127,7 +146,7 @@ namespace SwissArmyHook
                 writer.Write((UInt16)0x0000);
 
                 // payload
-                writer.Write(packet);
+                writer.Write(packet, offset, length);
                 writer.Write(new byte[] { 0, 0, 0, 0 }, 0, padding);
 
                 // pcapng block footer

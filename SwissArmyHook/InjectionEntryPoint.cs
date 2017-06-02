@@ -8,6 +8,7 @@ using System.Threading;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Diagnostics;
 
 namespace SwissArmyHook
 {
@@ -283,7 +284,7 @@ namespace SwissArmyHook
                 {
                     // associate completion port/key with pipe handle, 
                     ioPorts[result] = true;
-                    OnDebugMessage(String.Format("Port({0:X08}) = Handle({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
+                    OnDebugMessage(String.Format("Port({0:X08}) = Handle({1:X08})", result.ToInt32(), FileHandle.ToInt32()));
                 }
             }
             catch (Exception ex)
@@ -363,7 +364,7 @@ namespace SwissArmyHook
                             byte[] buffer = new byte[lpNumberOfBytesRead];
                             Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesRead);
                             OnDataReceived(hFile, buffer);
-                            OnDebugMessage(String.Format("Read(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
+                            OnDebugMessage(String.Format("Read(Handle({0:X08}), #{1}) -> #[{2}]", hFile.ToInt32(), nNumberOfBytesToRead, lpNumberOfBytesRead));
                         }
                         else
                         {
@@ -457,7 +458,7 @@ namespace SwissArmyHook
                             byte[] buffer = new byte[lpNumberOfBytesWritten];
                             Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesWritten);
                             OnDataReceived(hFile, buffer);
-                            OnDebugMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
+                            OnDebugMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, lpNumberOfBytesWritten));
                         }
                         else
                         {
@@ -607,7 +608,7 @@ namespace SwissArmyHook
                             else
                                 OnDataSent(info.Handle, buffer);
 
-                            OnDebugMessage(String.Format("GetResult(Handle({0:X08}), Overlapped({1:X08})) -> [{2}]", hFile.ToInt32(), lpOverlapped.ToInt32(), BitConverter.ToString(buffer).Replace("-", "")));
+                            OnDebugMessage(String.Format("GetResult(Handle({0:X08}), Overlapped({1:X08})) -> [{2}]", hFile.ToInt32(), lpOverlapped.ToInt32(), lpNumberOfBytesTransferred));
                         }
                         else
                         {
@@ -673,7 +674,7 @@ namespace SwissArmyHook
                             else
                                 OnDataSent(info.Handle, buffer);
 
-                            OnDebugMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
+                            OnDebugMessage(String.Format("GetStatus(IO({0:X08})) = Overlapped({1:X08}) & #{2}", CompletionPort.ToInt32(), lpOverlapped.ToInt32(), lpNumberOfBytes));
                         }
                         else
                         {
