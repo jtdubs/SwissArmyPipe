@@ -245,12 +245,11 @@ run [cmd] [args*] - hook new process",
         private static void RunApp(string app, string[] args)
         {
             // setup hooking
-            Console.Error.WriteLine("Creating IPC server...");
             string channelName = null;
             int pid = 0;
             var channel = RemoteHooking.IpcCreateServer<SwissArmyHook.ServerInterface>(ref channelName, System.Runtime.Remoting.WellKnownObjectMode.Singleton);
 
-            Console.Error.WriteLine("Launching {0} with args = {1}...", app, String.Join(" ", args));
+            Console.Error.WriteLine("SAP: Launching {0} with args = {1}...", app, String.Join(" ", args));
             try
             {
                 // create the hooked process
@@ -264,7 +263,6 @@ run [cmd] [args*] - hook new process",
             }
 
             // wait for process to exit
-            Console.Error.WriteLine("Waiting for process ({0}) to exit...", pid);
             try { Process.GetProcessById(pid).WaitForExit(); } catch { }
         }
 

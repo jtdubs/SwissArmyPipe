@@ -35,7 +35,7 @@ namespace SwissArmyHook
         /// <param name="channelName"></param>
         public void Run(RemoteHooking.IContext context, string channelName)
         {
-            server.ReportMessage(String.Format("Installing into {0}...", RemoteHooking.GetCurrentProcessId()));
+            // server.ReportMessage(String.Format("Installing into {0}...", RemoteHooking.GetCurrentProcessId()));
 
             // hook interesting functions
 
@@ -179,7 +179,7 @@ namespace SwissArmyHook
                     handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Open(pcapFilename, FileMode.Create, FileAccess.Write, FileShare.None), System.Text.Encoding.UTF8));
 
                     // report message back to SAP process
-                    OnMessage(String.Format("Handle({1:X08}) = Client(\"{0}\")", lpFileName, handle.ToInt32()));
+                    OnDebugMessage(String.Format("Handle({1:X08}) = Client(\"{0}\")", lpFileName, handle.ToInt32()));
                     OnMessage(String.Format("File '{0}' created for pipe '{1}'.", pcapFilename, lpFileName));
                 }
             }
@@ -231,7 +231,7 @@ namespace SwissArmyHook
                     handleToPCapWriter[handle] = new PCapNGWriter(new BinaryWriter(File.Open(pcapFilename, FileMode.Create, FileAccess.Write, FileShare.None), System.Text.Encoding.UTF8));
 
                     // report message back to SAP process
-                    OnMessage(String.Format("Handle({1:X08}) = Server(\"{0}\")", lpName, handle.ToInt32()));
+                    OnDebugMessage(String.Format("Handle({1:X08}) = Server(\"{0}\")", lpName, handle.ToInt32()));
                     OnMessage(String.Format("File '{0}' created for pipe '{1}'.", pcapFilename, lpName));
                 }
             }
@@ -274,7 +274,7 @@ namespace SwissArmyHook
                 {
                     // associate completion port/key with pipe handle, 
                     ioPorts[result] = true;
-                    OnMessage(String.Format("Port({0:X08}) = Handle({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
+                    OnDebugMessage(String.Format("Port({0:X08}) = Handle({1:X08}) & Key({2:X08})", result.ToInt32(), FileHandle.ToInt32(), CompletionKey.ToUInt32()));
                 }
             }
             catch (Exception ex)
@@ -327,17 +327,17 @@ namespace SwissArmyHook
                         // if the call finished immediately
                         if (result)
                         {
-                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Complete Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
+                            OnDebugMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Complete Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
                         }
                         // if the read is async (overlapped)
                         else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
                         {
-                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Pending Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
+                            OnDebugMessage(String.Format("Read(Handle({0:X08}), #{1}) -> Pending Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToRead, lpOverlapped.ToInt32()));
                         }
                         // otherwise, something unexpected happened
                         else
                         {
-                            OnMessage(String.Format("Read(Handle({0:X08}), @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToRead));
+                            OnDebugMessage(String.Format("Read(Handle({0:X08}), @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToRead));
                         }
 
                         return result;
@@ -354,11 +354,11 @@ namespace SwissArmyHook
                             byte[] buffer = new byte[lpNumberOfBytesRead];
                             Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesRead);
                             OnDataReceived(hFile, buffer);
-                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
+                            OnDebugMessage(String.Format("Read(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToRead, BitConverter.ToString(buffer).Replace("-", "")));
                         }
                         else
                         {
-                            OnMessage(String.Format("Read(Handle({0:X08}), #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToRead));
+                            OnDebugMessage(String.Format("Read(Handle({0:X08}), #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToRead));
                         }
 
                         return result;
@@ -421,17 +421,17 @@ namespace SwissArmyHook
                         // if the call finished immediately
                         if (result)
                         {
-                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Complete Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
+                            OnDebugMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Complete Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
                         }
                         // if the write is async (overlapped)
                         else if (lpOverlapped.ToInt32() != 0 && Marshal.GetLastWin32Error() == 997 /* ERROR_IO_PENDING */)
                         {
-                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Pending Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
+                            OnDebugMessage(String.Format("Write(Handle({0:X08}), #{1}) -> Pending Overlapped({2:X08})", hFile.ToInt32(), nNumberOfBytesToWrite, lpOverlapped.ToInt32()));
                         }
                         // otherwise, something unexpected happened
                         else
                         {
-                            OnMessage(String.Format("Write(Handle({0:X08}), @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToWrite));
+                            OnDebugMessage(String.Format("Write(Handle({0:X08}), @{1}) = !!", hFile.ToInt32(), nNumberOfBytesToWrite));
                         }
 
                         return result;
@@ -448,11 +448,11 @@ namespace SwissArmyHook
                             byte[] buffer = new byte[lpNumberOfBytesWritten];
                             Marshal.Copy(lpBuffer, buffer, 0, (int)lpNumberOfBytesWritten);
                             OnDataReceived(hFile, buffer);
-                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
+                            OnDebugMessage(String.Format("Write(Handle({0:X08}), #{1}) -> [{2}]", hFile.ToInt32(), nNumberOfBytesToWrite, BitConverter.ToString(buffer).Replace("-", "")));
                         }
                         else
                         {
-                            OnMessage(String.Format("Write(Handle({0:X08}), #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToWrite));
+                            OnDebugMessage(String.Format("Write(Handle({0:X08}), #{1}) -> !!", hFile.ToInt32(), nNumberOfBytesToWrite));
                         }
 
                         return result;
@@ -595,11 +595,11 @@ namespace SwissArmyHook
                         else
                             OnDataSent(info.Handle, buffer);
 
-                        OnMessage(String.Format("GetResult(Handle({0:X08}), Overlapped({1:X08})) -> [{2}]", hFile.ToInt32(), lpOverlapped.ToInt32(), BitConverter.ToString(buffer).Replace("-", "")));
+                        OnDebugMessage(String.Format("GetResult(Handle({0:X08}), Overlapped({1:X08})) -> [{2}]", hFile.ToInt32(), lpOverlapped.ToInt32(), BitConverter.ToString(buffer).Replace("-", "")));
                     }
                     else
                     {
-                        OnMessage(String.Format("GetResult(Handle({0:X08})) -> False", hFile.ToInt32()));
+                        OnDebugMessage(String.Format("GetResult(Handle({0:X08})) -> False", hFile.ToInt32()));
                     }
                 }
             }
@@ -654,12 +654,12 @@ namespace SwissArmyHook
                         else
                             OnDataSent(info.Handle, buffer);
 
-                        OnMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
+                        OnDebugMessage(String.Format("GetStatus(IO({0:X08})) = Key({2:X08}) & Overlapped({4:X08}) & [{3}]", CompletionPort.ToInt32(), lpNumberOfBytes, lpCompletionKey.ToUInt32(), BitConverter.ToString(buffer).Replace("-", ""), lpOverlapped.ToInt32()));
                     }
                     // otherwise, nothing to do
                     else
                     {
-                        OnMessage(String.Format("GetStatus(IO({0:X08})) = <NOT READY>", CompletionPort.ToInt32()));
+                        OnDebugMessage(String.Format("GetStatus(IO({0:X08})) = <NOT READY>", CompletionPort.ToInt32()));
                     }
                 }
             }
@@ -743,6 +743,17 @@ namespace SwissArmyHook
         private void OnMessage(string message)
         {
             queue.Add(() => server.ReportMessage(message));
+        }
+
+        /// <summary>
+        /// Transmit a message to the SAP process
+        /// </summary>
+        /// <param name="message"></param>
+        private void OnDebugMessage(string message)
+        {
+#if DEBUG
+            queue.Add(() => server.ReportMessage(message));
+#endif
         }
 
         private ServerInterface server = null;
