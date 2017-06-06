@@ -97,6 +97,21 @@ namespace SwissArmyHook
                new CloseHandle_Delegate(CloseHandle_Hook),
                this);
 
+            var createProcessHook = LocalHook.Create(
+               LocalHook.GetProcAddress("kernel32.dll", "CreateProcessW"),
+               new CreateProcess_Delegate(CreateProcess_Hook),
+               this);
+
+            var createProcessAsUserHook = LocalHook.Create(
+               LocalHook.GetProcAddress("advapi32.dll", "CreateProcessAsUserW"),
+               new CreateProcessAsUser_Delegate(CreateProcessAsUser_Hook),
+               this);
+
+            var createProcessWithLogonHook = LocalHook.Create(
+               LocalHook.GetProcAddress("advapi32.dll", "CreateProcessWithLogonW"),
+               new CreateProcessWithLogon_Delegate(CreateProcessWithLogon_Hook),
+               this);
+
             // don't run hooks on this thread, otherwise we'll recurse to our doom! 
             createFileHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             createNamedPipeHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
@@ -109,6 +124,9 @@ namespace SwissArmyHook
             readFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             writeFileExHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
             closeHandleHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            createProcessHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            createProcessAsUserHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
+            createProcessWithLogonHook.ThreadACL.SetExclusiveACL(new Int32[] { 0 });
 
             // wake up the hooked process
             RemoteHooking.WakeUpProcess();
@@ -146,6 +164,9 @@ namespace SwissArmyHook
             readFileExHook.Dispose();
             writeFileExHook.Dispose();
             closeHandleHook.Dispose();
+            createProcessHook.Dispose();
+            createProcessAsUserHook.Dispose();
+            createProcessWithLogonHook.Dispose();
 
             // final clean-up
             LocalHook.Release();
@@ -800,6 +821,78 @@ namespace SwissArmyHook
 
             // call the real CloseHandle function
             return CloseHandle(hObject);
+        }
+        #endregion
+
+        #region CreateProcess
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool CreateProcessW(string lpApplicationName, string lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool CreateProcess_Delegate(string lpApplicationName, string lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation);
+        
+        private bool CreateProcess_Hook(string lpApplicationName, string lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation)
+        {
+            bool result = false;
+
+            try
+            {
+                result = CreateProcessW(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, ref lpProcessInformation);
+                OnDebugMessage(String.Format("CreateProcess({0}, {1})", lpApplicationName, lpCommandLine));
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region CreateProcessAsUser
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool CreateProcessAsUserW(IntPtr hToken, string lpApplicationName, ref string lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool CreateProcessAsUser_Delegate(IntPtr hToken, string lpApplicationName, ref string lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation);
+
+        private bool CreateProcessAsUser_Hook(IntPtr hToken, string lpApplicationName, ref string lpCommandLine, IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation)
+        {
+            bool result = false;
+
+            try
+            {
+                result = CreateProcessAsUserW(hToken, lpApplicationName, ref lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, ref lpProcessInformation);
+                OnDebugMessage(String.Format("CreateProcessAsUser({0}, {1})", lpApplicationName, lpCommandLine));
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+        #endregion
+
+        #region CreateProcessWithLogonW
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+        private static extern bool CreateProcessWithLogonW(string lpUsername, string lpDomain, string lpPassword, uint dwLogonFlags, string lpApplicationName, ref string lpCommandLine, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode, SetLastError = true)]
+        private delegate bool CreateProcessWithLogon_Delegate(string lpUsername, string lpDomain, string lpPassword, uint dwLogonFlags, string lpApplicationName, ref string lpCommandLine, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation);
+
+        private bool CreateProcessWithLogon_Hook(string lpUsername, string lpDomain, string lpPassword, uint dwLogonFlags, string lpApplicationName, ref string lpCommandLine, uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory, IntPtr lpStartupInfo, ref ProcessInformation lpProcessInformation)
+        {
+            bool result = false;
+
+            try
+            {
+                result = CreateProcessWithLogonW(lpUsername, lpDomain, lpPassword, dwLogonFlags, lpApplicationName, ref lpCommandLine, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, ref lpProcessInformation);
+                OnDebugMessage(String.Format("CreateProcessWithLogon({0}, {1})", lpApplicationName, lpCommandLine));
+            }
+            catch
+            {
+            }
+
+            return result;
         }
         #endregion
 

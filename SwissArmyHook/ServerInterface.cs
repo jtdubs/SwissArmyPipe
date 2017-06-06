@@ -22,5 +22,9 @@ namespace SwissArmyHook
         public void Ping()
         {
         }
+
+        public void FollowAndResume(int pid)
+        {
+        }
     }
 }

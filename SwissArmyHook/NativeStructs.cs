@@ -14,4 +14,16 @@ namespace SwissArmyHook
         public IntPtr Internal;
         public uint dwNumberOfBytesTransferred;
     }
+
+    /// <summary>
+    /// PROCESS_INFORMATION structure used by CreateProcess and friends
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ProcessInformation
+    {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public uint dwProcessID;
+        public uint dwThreadId;
+    }
 }

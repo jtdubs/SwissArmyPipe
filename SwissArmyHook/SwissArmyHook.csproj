@@ -48,7 +48,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="PCapNG.cs" />
-    <Compile Include="NativeOverlappedEntry.cs" />
+    <Compile Include="NativeStructs.cs" />
     <Compile Include="ServerInterface.cs" />
     <Compile Include="InjectionEntryPoint.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
